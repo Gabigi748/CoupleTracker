@@ -6,6 +6,7 @@
 
 import Foundation
 import CoreLocation
+import UIKit
 import Observation
 
 /// 定位管理器
