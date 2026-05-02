@@ -124,10 +124,13 @@ final class WebSocketManager {
     /// 發送位置更新
     /// - Parameter location: 當前位置
     func sendLocation(_ location: Location) {
-        // 後端期望格式：{"type":"location","lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...}
+        // 後端期望格式：{"type":"location","lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...,"in_china":...}
         let battery = UIDevice.current.batteryLevel >= 0
             ? Int(UIDevice.current.batteryLevel * 100)
             : -1
+        
+        // 附帶 in_china 標記，讓接收端判斷是否需要座標轉換
+        let inChina = CoordinateConverter.isInsideChina(lat: location.latitude, lng: location.longitude)
         
         let payload: [String: Any] = [
             "type": "location",
@@ -135,7 +138,8 @@ final class WebSocketManager {
             "lng": location.longitude,
             "accuracy": location.accuracy ?? 10.0,
             "battery": battery,
-            "timestamp": ISO8601DateFormatter().string(from: location.timestamp)
+            "timestamp": ISO8601DateFormatter().string(from: location.timestamp),
+            "in_china": inChina
         ]
         
         sendJSON(payload)
@@ -376,7 +380,12 @@ final class WebSocketManager {
     }
     
     /// 處理對方位置更新
-    /// 後端格式：{"type":"location","user_id":...,"lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...}
+    /// 後端格式：{"type":"location","user_id":...,"lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...,"in_china":...}
+    ///
+    /// GCJ-02 座標偏移修正邏輯：
+    /// - 只有「自己在中國（MapKit 用高德/GCJ-02）+ 對方不在中國（座標是 WGS-84）」時
+    ///   需要把對方的 WGS-84 座標轉成 GCJ-02，才能在高德地圖上正確顯示
+    /// - 其他情況不需要轉換
     private func handleLocationUpdate(_ json: [String: Any]) {
         guard let lat = json["lat"] as? Double,
               let lng = json["lng"] as? Double else {
@@ -392,9 +401,24 @@ final class WebSocketManager {
             timestamp = Date()
         }
         
+        // GCJ-02 座標偏移修正
+        var displayLat = lat
+        var displayLng = lng
+        
+        let partnerInChina = json["in_china"] as? Bool ?? false
+        let selfInChina = CoordinateConverter.isDeviceInChina
+        
+        if selfInChina && !partnerInChina {
+            // 自己在中國（MapKit 用高德 GCJ-02），對方不在中國（WGS-84）
+            // 需要把對方的 WGS-84 座標轉成 GCJ-02
+            let converted = CoordinateConverter.wgs84ToGcj02(lat: lat, lng: lng)
+            displayLat = converted.lat
+            displayLng = converted.lng
+        }
+        
         partnerLocation = Location(
-            latitude: lat,
-            longitude: lng,
+            latitude: displayLat,
+            longitude: displayLng,
             timestamp: timestamp
         )
         

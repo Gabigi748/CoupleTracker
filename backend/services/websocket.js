@@ -141,7 +141,7 @@ async function handleMessage(userId, data) {
  * - 節流存入 DB（每 30 秒最多一筆）
  */
 async function handleLocation(userId, data) {
-  const { lat, lng, accuracy, battery, timestamp } = data;
+  const { lat, lng, accuracy, battery, timestamp, in_china } = data;
 
   if (lat == null || lng == null) return;
 
@@ -159,6 +159,7 @@ async function handleLocation(userId, data) {
       accuracy,
       battery,
       timestamp: timestamp || Date.now(),
+      in_china: !!in_china,
     });
   }
 
