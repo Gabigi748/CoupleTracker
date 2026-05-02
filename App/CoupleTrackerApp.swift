@@ -6,6 +6,8 @@
 
 import SwiftUI
 import UIKit
+import ActivityKit
+import CoreLocation
 
 // MARK: - App Delegate
 
@@ -68,6 +70,12 @@ struct CoupleTrackerApp: App {
     /// 圍欄管理器
     @State private var geofenceManager: GeofenceManager
     
+    /// Motion & Fitness 管理器
+    @State private var motionManager = MotionActivityManager()
+    
+    /// Live Activity 管理器
+    @State private var liveActivityManager = LiveActivityManager()
+    
     // MARK: - 初始化
     
     init() {
@@ -90,6 +98,8 @@ struct CoupleTrackerApp: App {
                 .environment(webSocketManager)
                 .environment(notificationService)
                 .environment(geofenceManager)
+                .environment(motionManager)
+                .environment(liveActivityManager)
                 .onAppear {
                     setupServices()
                 }
@@ -109,6 +119,11 @@ struct CoupleTrackerApp: App {
             locationManager.setForegroundAccuracy()
             locationManager.startUpdatingLocation()
             
+            // 恢復 motion monitoring
+            if !motionManager.isMonitoring {
+                motionManager.startMonitoring()
+            }
+            
             if apiService.isAuthenticated, let token = apiService.currentToken {
                 webSocketManager.connect(token: token)
             }
@@ -118,6 +133,7 @@ struct CoupleTrackerApp: App {
             locationManager.setBackgroundAccuracy()
             // 同時啟動 significant location changes 作為備援
             locationManager.startSignificantLocationMonitoring()
+            // Motion monitoring 在背景保持運行（省電用，根據狀態調整 GPS）
             
         case .inactive:
             break
@@ -151,16 +167,49 @@ struct CoupleTrackerApp: App {
             handleGeofenceEvent(event)
         }
         
-        // 設定位置更新回調 — 透過 WebSocket 發送位置
+        // 設定位置更新回調 — 透過 WebSocket 發送位置 + 更新 Live Activity
         locationManager.onLocationUpdate = { location in
             Task { @MainActor in
                 webSocketManager.sendLocation(location)
+                
+                // 更新 Live Activity（如果有對方位置）
+                if let partnerLoc = webSocketManager.partnerLocation {
+                    let myLoc = CLLocation(latitude: location.latitude, longitude: location.longitude)
+                    let partnerCLLoc = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
+                    let distance = myLoc.distance(from: partnerCLLoc)
+                    let partnerName = apiService.partnerUser?.name ?? "對方"
+                    
+                    liveActivityManager.updateLiveActivity(
+                        partnerName: partnerName,
+                        distance: distance,
+                        battery: webSocketManager.partnerBattery ?? -1,
+                        activity: webSocketManager.partnerActivity
+                    )
+                }
             }
         }
         
         // 如果已登入，建立 WebSocket 連線
         if apiService.isAuthenticated, let token = apiService.currentToken {
             webSocketManager.connect(token: token)
+        }
+        
+        // 啟動 Motion & Fitness 監控
+        motionManager.onActivityChanged = { activity in
+            Task { @MainActor in
+                // 智慧調整定位精度
+                locationManager.adjustAccuracyForActivity(activity)
+                // 發送移動狀態給對方
+                webSocketManager.sendMotionActivity(activity.rawValue)
+            }
+        }
+        motionManager.startMonitoring()
+        
+        // 啟動 Live Activity
+        if apiService.isAuthenticated {
+            let myName = apiService.currentUser?.name ?? "我"
+            let partnerName = apiService.partnerUser?.name ?? "對方"
+            liveActivityManager.startLiveActivity(myName: myName, partnerName: partnerName)
         }
         
         // 同步電量
@@ -200,6 +249,8 @@ struct ContentView: View {
     @Environment(APIService.self) private var apiService
     @Environment(WebSocketManager.self) private var webSocketManager
     @Environment(NotificationService.self) private var notificationService
+    @Environment(LocationManager.self) private var locationManager
+    @Environment(LiveActivityManager.self) private var liveActivityManager
     
     var body: some View {
         Group {
@@ -250,6 +301,22 @@ struct ContentView: View {
                     partnerName: event.senderName
                 )
             }
+        }
+        .onChange(of: webSocketManager.partnerLocation?.timestamp) { _, _ in
+            // 收到對方位置更新時，更新 Live Activity
+            guard let partnerLoc = webSocketManager.partnerLocation,
+                  let myLoc = locationManager.currentLocation else { return }
+            let myCLLoc = CLLocation(latitude: myLoc.latitude, longitude: myLoc.longitude)
+            let partnerCLLoc = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
+            let distance = myCLLoc.distance(from: partnerCLLoc)
+            let partnerName = apiService.partnerUser?.name ?? "對方"
+            
+            liveActivityManager.updateLiveActivity(
+                partnerName: partnerName,
+                distance: distance,
+                battery: webSocketManager.partnerBattery ?? -1,
+                activity: webSocketManager.partnerActivity
+            )
         }
     }
 }

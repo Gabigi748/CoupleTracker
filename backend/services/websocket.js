@@ -13,8 +13,14 @@ const clients = new Map();
 // 記錄每個用戶最後一次存入 DB 的位置時間（節流用）
 const lastLocationSave = new Map();
 
+// 記錄每個用戶最後一次存入 DB 的座標（距離過濾用）
+const lastSavedLocation = new Map();
+
 // 位置存入 DB 的最小間隔（毫秒）
 const LOCATION_SAVE_INTERVAL = 30 * 1000;
+
+// 位置存入 DB 的最小位移（公尺）
+const LOCATION_SAVE_DISTANCE = 50;
 
 /**
  * 初始化 WebSocket 伺服器
@@ -70,6 +76,7 @@ function initWebSocket(server) {
     ws.on('close', () => {
       clients.delete(userId);
       lastLocationSave.delete(userId);
+      lastSavedLocation.delete(userId);
       console.log(`[WS] 用戶 ${userId} 已斷線，在線人數: ${clients.size}`);
       notifyPartnerStatus(userId, false);
     });
@@ -127,6 +134,9 @@ async function handleMessage(userId, data) {
     case 'geofence_event':
       await handleGeofenceEvent(userId, data);
       break;
+    case 'motion_activity':
+      await handleMotionActivity(userId, data);
+      break;
     case 'ping':
       sendToUser(userId, { type: 'pong', timestamp: Date.now() });
       break;
@@ -163,19 +173,26 @@ async function handleLocation(userId, data) {
     });
   }
 
-  // 節流存入 DB
+  // 節流存入 DB：時間間隔 + 距離過濾
   const now = Date.now();
   const lastSave = lastLocationSave.get(userId) || 0;
 
   if (now - lastSave >= LOCATION_SAVE_INTERVAL) {
-    lastLocationSave.set(userId, now);
-    try {
-      await db.query(
-        'INSERT INTO locations (user_id, lat, lng, accuracy, battery) VALUES (?, ?, ?, ?, ?)',
-        [userId, lat, lng, accuracy || null, battery || null]
-      );
-    } catch (err) {
-      console.error(`[WS] 儲存位置錯誤 (用戶 ${userId}):`, err.message);
+    // 檢查距離是否超過 50m
+    const lastLoc = lastSavedLocation.get(userId);
+    const distance = lastLoc ? haversineDistance(lastLoc.lat, lastLoc.lng, lat, lng) : Infinity;
+
+    if (distance >= LOCATION_SAVE_DISTANCE) {
+      lastLocationSave.set(userId, now);
+      lastSavedLocation.set(userId, { lat, lng });
+      try {
+        await db.query(
+          'INSERT INTO locations (user_id, lat, lng, accuracy, battery) VALUES (?, ?, ?, ?, ?)',
+          [userId, lat, lng, accuracy || null, battery || null]
+        );
+      } catch (err) {
+        console.error(`[WS] 儲存位置錯誤 (用戶 ${userId}):`, err.message);
+      }
     }
   }
 }
@@ -450,6 +467,33 @@ async function handleGeofenceEvent(userId, data) {
 }
 
 /**
+ * 處理移動狀態
+ * - 即時轉發給配對對象
+ * - 不需要存 DB
+ */
+async function handleMotionActivity(userId, data) {
+  const { activity } = data;
+
+  if (!activity) return;
+
+  try {
+    // 取得配對對象
+    const [users] = await db.query('SELECT partner_id FROM users WHERE id = ?', [userId]);
+    const partnerId = users[0]?.partner_id;
+
+    if (partnerId) {
+      sendToUser(partnerId, {
+        type: 'motion_activity',
+        user_id: userId,
+        activity,
+      });
+    }
+  } catch (err) {
+    console.error(`[WS] 移動狀態處理錯誤 (用戶 ${userId}):`, err.message);
+  }
+}
+
+/**
  * 通知配對對象上線/離線狀態
  */
 async function notifyPartnerStatus(userId, online) {
@@ -490,6 +534,19 @@ function sendToUser(userId, data) {
 function isUserOnline(userId) {
   const ws = clients.get(userId);
   return ws && ws.readyState === ws.OPEN;
+}
+
+/**
+ * Haversine 公式計算兩點間距離（公尺）
+ */
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000; // 地球半徑（公尺）
+  const toRad = (deg) => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 module.exports = { initWebSocket, sendToUser, isUserOnline };

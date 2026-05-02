@@ -71,6 +71,8 @@ jobs:
                   NSLocationWhenInUseUsageDescription: "「小寧和魚魚」需要您的位置來即時顯示在地圖上，讓對方知道你在哪裡"
                   NSLocationAlwaysAndWhenInUseUsageDescription: "請選擇「永遠允許」，這樣即使 App 在背景也能持續更新位置給對方"
                   NSLocationAlwaysUsageDescription: "請選擇「永遠允許」，這樣即使 App 在背景也能持續更新位置給對方"
+                  NSMotionUsageDescription: "「小寧和魚魚」需要偵測您的移動狀態（走路、開車等），以智慧調整定位精度並通知對方"
+                  NSSupportsLiveActivities: true
                   NSAppTransportSecurity:
                     NSAllowsArbitraryLoads: true
                   UIBackgroundModes:
@@ -83,6 +85,29 @@ jobs:
                   MARKETING_VERSION: "1.0.0"
                   CURRENT_PROJECT_VERSION: "1"
                   SWIFT_VERSION: "6.0"
+            CoupleTrackerWidget:
+              type: app-extension
+              platform: iOS
+              sources:
+                - path: CoupleTrackerWidget
+              info:
+                path: CoupleTrackerWidget/Info.plist
+                properties:
+                  CFBundleDisplayName: "CoupleTracker Widget"
+                  NSExtension:
+                    NSExtensionPointIdentifier: com.apple.widgetkit-extension
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.fish.coupletracker.widget
+                  MARKETING_VERSION: "1.0.0"
+                  CURRENT_PROJECT_VERSION: "1"
+                  SWIFT_VERSION: "6.0"
+                  CODE_SIGN_IDENTITY: ""
+                  CODE_SIGNING_REQUIRED: "NO"
+                  CODE_SIGNING_ALLOWED: "NO"
+              dependencies:
+                - target: CoupleTracker
+                  embed: false
           EOF
           
           brew install xcodegen

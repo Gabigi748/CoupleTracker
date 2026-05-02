@@ -161,20 +161,29 @@ struct MapView: View {
                 }
             }
             
-            // 對方的位置標記（粉色愛心）
+            // 對方的位置標記（粉色愛心 + 移動狀態）
             if let partnerLoc = partnerLocation {
                 Annotation(partnerName, coordinate: partnerLoc) {
                     VStack(spacing: 2) {
                         // 名字標籤
-                        Text(partnerName)
-                            .font(.caption2.bold())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(
-                                Capsule()
-                                    .fill(AppTheme.pink)
-                            )
+                        HStack(spacing: 4) {
+                            // 移動狀態圖示
+                            if let activity = MotionActivity(rawValue: webSocketManager.partnerActivity),
+                               activity != .unknown {
+                                Image(systemName: activity.iconName)
+                                    .font(.caption2)
+                                    .foregroundStyle(.white)
+                            }
+                            Text(partnerName)
+                                .font(.caption2.bold())
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(AppTheme.pink)
+                        )
                         
                         // 愛心圖示
                         Image(systemName: "heart.fill")

@@ -108,6 +108,33 @@ final class LocationManager: NSObject {
         locationManager.distanceFilter = 20
     }
     
+    /// 根據移動狀態智慧調整定位精度
+    /// - Parameter activity: 當前移動狀態
+    func adjustAccuracyForActivity(_ activity: MotionActivity) {
+        switch activity {
+        case .stationary:
+            // 靜止：低精度省電
+            locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            locationManager.distanceFilter = 50
+        case .walking, .running:
+            // 走路/跑步：高精度
+            locationManager.desiredAccuracy = kCLLocationAccuracyBest
+            locationManager.distanceFilter = 10
+        case .driving:
+            // 開車：導航級精度
+            locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+            locationManager.distanceFilter = 20
+        case .cycling:
+            // 騎車：高精度
+            locationManager.desiredAccuracy = kCLLocationAccuracyBest
+            locationManager.distanceFilter = 15
+        case .unknown:
+            // 未知：使用預設
+            locationManager.desiredAccuracy = kCLLocationAccuracyBest
+            locationManager.distanceFilter = 10
+        }
+    }
+    
     /// 開始背景定位（使用 significant location changes 省電）
     /// 只在位置有顯著變化時才會喚醒 App（通常 500m+）
     func startSignificantLocationMonitoring() {

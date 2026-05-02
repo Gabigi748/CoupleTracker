@@ -54,6 +54,9 @@ final class WebSocketManager {
     /// 對方圍欄事件（供 NotificationService 使用）
     var partnerGeofenceEvent: PartnerGeofenceEvent?
     
+    /// 對方移動狀態
+    var partnerActivity: String = "unknown"
+    
     // MARK: - 私有屬性
     
     /// WebSocket 連線
@@ -216,6 +219,17 @@ final class WebSocketManager {
         sendJSON(payload)
     }
     
+    /// 發送移動狀態給對方
+    /// - Parameter activity: 移動狀態字串（"walking", "driving", "stationary" 等）
+    func sendMotionActivity(_ activity: String) {
+        let payload: [String: Any] = [
+            "type": "motion_activity",
+            "activity": activity
+        ]
+        
+        sendJSON(payload)
+    }
+    
     // MARK: - 螢幕監聽
     
     /// 開始監聽螢幕開關
@@ -364,6 +378,12 @@ final class WebSocketManager {
         case "geofence_event":
             // 對方圍欄事件：{"type":"geofence_event","user_id":...,"zone_name":...,"event":...,"text":...}
             handleGeofenceEventReceived(json)
+            
+        case "motion_activity":
+            // 對方移動狀態：{"type":"motion_activity","user_id":...,"activity":...}
+            if let activity = json["activity"] as? String {
+                partnerActivity = activity
+            }
             
         case "pong":
             // 心跳回應，連線正常
