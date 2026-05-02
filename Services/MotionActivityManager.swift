@@ -1,9 +1,9 @@
 // MotionActivityManager.swift
 // CoupleTracker
 //
-// Motion & Fitness 管理器 — 使用 CMMotionActivityManager 偵測移動狀態
-// 注意：所有 CMMotionActivityManager 回調都不在 MainActor 上
-// 使用 DispatchQueue.main.async 而非 Task { @MainActor in } 避免 Swift 6 isolation crash
+// Motion & Fitness 管理器
+// 注意：不使用 @MainActor，因為 CoreMotion 回調在自己的 queue 上
+// 使用 @unchecked Sendable 避免 Swift 6 isolation 問題
 
 import Foundation
 import CoreMotion
@@ -42,11 +42,11 @@ enum MotionActivity: String, Codable, Sendable {
 }
 
 /// Motion & Fitness 管理器
-@MainActor
+/// 不標記 @MainActor — CoreMotion 回調在自己的 dispatch queue 上
 @Observable
-final class MotionActivityManager {
+final class MotionActivityManager: @unchecked Sendable {
     
-    // MARK: - 公開屬性
+    // MARK: - 公開屬性（只在主線程讀取，CoreMotion 回調透過 MainActor.run 更新）
     
     var currentActivity: MotionActivity = .unknown
     var todaySteps: Int = 0
@@ -59,10 +59,11 @@ final class MotionActivityManager {
     private let pedometer = CMPedometer()
     
     /// 活動變更回調
-    var onActivityChanged: ((MotionActivity) -> Void)?
+    @MainActor var onActivityChanged: ((MotionActivity) -> Void)?
     
     // MARK: - 公開方法
     
+    @MainActor
     func startMonitoring() {
         guard CMMotionActivityManager.isActivityAvailable() else {
             print("⚠️ 此裝置不支援 Motion Activity")
@@ -75,23 +76,25 @@ final class MotionActivityManager {
         let now = Date()
         let oneMinuteAgo = now.addingTimeInterval(-60)
         
-        // 使用 OperationQueue.main 確保回調在主線程
         activityManager.queryActivityStarting(from: oneMinuteAgo, to: now, to: OperationQueue.main) { [weak self] _, error in
-            // 已經在主線程上（OperationQueue.main）
             guard let self else { return }
             
             if let error = error as? NSError {
                 if error.domain == "CMErrorDomain", error.code == 105 {
                     print("⚠️ Motion Activity 未授權")
-                    self.isAuthorized = false
+                    Task { @MainActor in
+                        self.isAuthorized = false
+                    }
                     return
                 }
                 print("⚠️ Motion Activity 查詢錯誤: \(error.localizedDescription)")
                 return
             }
             
-            self.isAuthorized = true
-            self.isMonitoring = true
+            Task { @MainActor in
+                self.isAuthorized = true
+                self.isMonitoring = true
+            }
             self.startActivityUpdates()
             self.startPedometerUpdates()
         }
@@ -100,26 +103,35 @@ final class MotionActivityManager {
     func stopMonitoring() {
         activityManager.stopActivityUpdates()
         pedometer.stopUpdates()
-        isMonitoring = false
+        Task { @MainActor in
+            self.isMonitoring = false
+        }
     }
     
     // MARK: - 私有方法
     
     private func startActivityUpdates() {
-        // 關鍵：使用 OperationQueue.main 讓回調直接在主線程執行
-        // 這樣就不會觸發 Swift 6 的 MainActor isolation 檢查
-        activityManager.startActivityUpdates(to: OperationQueue.main) { [weak self] activity in
+        // 使用自訂 queue，回調裡不直接存取 @Observable 屬性
+        let queue = OperationQueue()
+        queue.name = "com.fish.coupletracker.motion"
+        queue.maxConcurrentOperationCount = 1
+        
+        activityManager.startActivityUpdates(to: queue) { [weak self] activity in
             guard let self else { return }
             guard let activity else { return }
             guard activity.confidence != .low else { return }
             
             let motionActivity = Self.mapActivity(activity)
-            let previousActivity = self.currentActivity
-            self.currentActivity = motionActivity
-            self.isAuthorized = true
             
-            if motionActivity != previousActivity {
-                self.onActivityChanged?(motionActivity)
+            // 透過 MainActor.run 安全更新 UI 屬性
+            Task { @MainActor in
+                let previousActivity = self.currentActivity
+                self.currentActivity = motionActivity
+                self.isAuthorized = true
+                
+                if motionActivity != previousActivity {
+                    self.onActivityChanged?(motionActivity)
+                }
             }
         }
     }
@@ -131,17 +143,19 @@ final class MotionActivityManager {
         
         // 查詢今日已有步數
         pedometer.queryPedometerData(from: startOfDay, to: Date()) { [weak self] data, _ in
+            guard let self else { return }
             guard let steps = data?.numberOfSteps.intValue else { return }
-            DispatchQueue.main.async {
-                self?.todaySteps = steps
+            Task { @MainActor in
+                self.todaySteps = steps
             }
         }
         
         // 即時更新
         pedometer.startUpdates(from: startOfDay) { [weak self] data, _ in
+            guard let self else { return }
             guard let steps = data?.numberOfSteps.intValue else { return }
-            DispatchQueue.main.async {
-                self?.todaySteps = steps
+            Task { @MainActor in
+                self.todaySteps = steps
             }
         }
     }
