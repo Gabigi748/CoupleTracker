@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh-Hant</string>
 	<key>CFBundleDisplayName</key>
-	<string>CoupleTracker</string>
+	<string>小寧與我</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -29,11 +29,11 @@
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>需要您的位置來顯示在地圖上</string>
+	<string>「小寧與我」需要您的位置來即時顯示在地圖上，讓對方知道你在哪裡</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>需要背景定位來即時更新位置給對方</string>
+	<string>請選擇「永遠允許」，這樣即使 App 在背景也能持續更新位置給對方</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>需要背景定位來即時更新位置給對方</string>
+	<string>請選擇「永遠允許」，這樣即使 App 在背景也能持續更新位置給對方</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

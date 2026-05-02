@@ -50,7 +50,7 @@ struct SplashView: View {
                 
                 // App 名稱
                 if showText {
-                    Text("CoupleTracker")
+                    Text("小寧與我")
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .transition(.move(edge: .bottom).combined(with: .opacity))

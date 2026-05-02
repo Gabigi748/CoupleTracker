@@ -83,7 +83,7 @@ struct LoginView: View {
                 .foregroundStyle(AppTheme.primaryGradient)
                 .scaleEffect(heartScale)
             
-            Text("CoupleTracker")
+            Text("小寧與我")
                 .font(.largeTitle.bold())
                 .foregroundStyle(AppTheme.primaryGradient)
             
