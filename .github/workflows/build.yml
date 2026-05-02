@@ -1,0 +1,66 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # 手動觸發
+
+jobs:
+  build:
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve dependencies
+        run: xcodebuild -resolvePackageDependencies -scheme CoupleTracker -destination 'generic/platform=iOS'
+
+      - name: Build for iOS (Debug, no signing)
+        run: |
+          xcodebuild build \
+            -scheme CoupleTracker \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty || true
+
+      - name: Archive for iOS (Release)
+        run: |
+          xcodebuild archive \
+            -scheme CoupleTracker \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -archivePath build/CoupleTracker.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty || true
+
+      - name: Export unsigned IPA
+        run: |
+          mkdir -p build/ipa
+          if [ -d "build/CoupleTracker.xcarchive/Products/Applications" ]; then
+            cd build/CoupleTracker.xcarchive/Products/Applications
+            mkdir -p Payload
+            cp -r *.app Payload/
+            zip -r ../../../ipa/CoupleTracker-unsigned.ipa Payload
+          else
+            echo "Archive not found, skipping IPA export"
+          fi
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CoupleTracker-unsigned
+          path: build/ipa/*.ipa
+          if-no-files-found: warn

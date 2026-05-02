@@ -1,0 +1,28 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+
+# SPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Firebase
+GoogleService-Info.plist
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# CocoaPods (if used)
+Pods/

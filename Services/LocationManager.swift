@@ -1,0 +1,270 @@
+// LocationManager.swift
+// CoupleTracker
+//
+// Core Location 管理器 — 處理定位權限、背景/前景定位、地理圍欄監控
+
+import Foundation
+import CoreLocation
+import Observation
+
+/// 定位管理器
+/// 負責所有 Core Location 相關操作：權限請求、位置更新、地理圍欄
+@MainActor
+@Observable
+final class LocationManager: NSObject {
+    
+    // MARK: - 屬性
+    
+    /// 當前位置
+    var currentLocation: Location?
+    
+    /// 授權狀態
+    var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    
+    /// 是否正在更新位置
+    var isUpdatingLocation: Bool = false
+    
+    /// 最近的定位錯誤
+    var locationError: String?
+    
+    /// 目前監控中的圍欄數量
+    var monitoredRegionsCount: Int = 0
+    
+    /// 圍欄事件回調
+    var onGeofenceEvent: ((GeofenceEvent) -> Void)?
+    
+    /// 位置更新回調
+    var onLocationUpdate: ((Location) -> Void)?
+    
+    // MARK: - 私有屬性
+    
+    /// Core Location 管理器
+    private let locationManager = CLLocationManager()
+    
+    /// 地理編碼器（用於反向地理編碼）
+    private let geocoder = CLGeocoder()
+    
+    // MARK: - 初始化
+    
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        // 背景定位設定
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.pausesLocationUpdatesAutomatically = false
+        locationManager.showsBackgroundLocationIndicator = true
+        // 設定距離過濾器（減少不必要的更新）
+        locationManager.distanceFilter = 10 // 移動 10 公尺才觸發更新
+        
+        authorizationStatus = locationManager.authorizationStatus
+    }
+    
+    // MARK: - 權限請求
+    
+    /// 請求「永遠允許」定位權限
+    /// 注意：iOS 會先給「使用期間」，之後才能升級到「永遠」
+    func requestAlwaysAuthorization() {
+        locationManager.requestAlwaysAuthorization()
+    }
+    
+    /// 請求「使用期間」定位權限
+    func requestWhenInUseAuthorization() {
+        locationManager.requestWhenInUseAuthorization()
+    }
+    
+    // MARK: - 位置更新
+    
+    /// 開始前景精確定位
+    func startUpdatingLocation() {
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.distanceFilter = 10
+        locationManager.startUpdatingLocation()
+        isUpdatingLocation = true
+    }
+    
+    /// 停止前景定位
+    func stopUpdatingLocation() {
+        locationManager.stopUpdatingLocation()
+        isUpdatingLocation = false
+    }
+    
+    /// 開始背景定位（使用 significant location changes 省電）
+    /// 只在位置有顯著變化時才會喚醒 App（通常 500m+）
+    func startSignificantLocationMonitoring() {
+        locationManager.startMonitoringSignificantLocationChanges()
+    }
+    
+    /// 停止背景定位
+    func stopSignificantLocationMonitoring() {
+        locationManager.stopMonitoringSignificantLocationChanges()
+    }
+    
+    /// 請求單次位置更新
+    func requestOneTimeLocation() {
+        locationManager.requestLocation()
+    }
+    
+    // MARK: - 地理圍欄
+    
+    /// 開始監控一個地理圍欄區域
+    /// - Parameter zone: 要監控的圍欄區域
+    /// - Returns: 是否成功開始監控
+    @discardableResult
+    func startMonitoring(zone: GeofenceZone) -> Bool {
+        // 檢查是否超過最大數量限制（iOS 最多 20 個）
+        guard locationManager.monitoredRegions.count < GeofenceZone.maxGeofences else {
+            locationError = "已達到最大圍欄數量限制（\(GeofenceZone.maxGeofences) 個）"
+            return false
+        }
+        
+        // 檢查裝置是否支援圍欄監控
+        guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else {
+            locationError = "此裝置不支援地理圍欄監控"
+            return false
+        }
+        
+        let region = zone.circularRegion
+        locationManager.startMonitoring(for: region)
+        monitoredRegionsCount = locationManager.monitoredRegions.count
+        return true
+    }
+    
+    /// 停止監控一個地理圍欄區域
+    /// - Parameter zone: 要停止監控的圍欄區域
+    func stopMonitoring(zone: GeofenceZone) {
+        let region = zone.circularRegion
+        locationManager.stopMonitoring(for: region)
+        monitoredRegionsCount = locationManager.monitoredRegions.count
+    }
+    
+    /// 停止所有圍欄監控
+    func stopAllMonitoring() {
+        for region in locationManager.monitoredRegions {
+            locationManager.stopMonitoring(for: region)
+        }
+        monitoredRegionsCount = 0
+    }
+    
+    // MARK: - 反向地理編碼
+    
+    /// 將座標轉換為地址字串
+    /// - Parameter location: CLLocation 物件
+    /// - Returns: 地址字串
+    func reverseGeocode(location: CLLocation) async -> String? {
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            guard let placemark = placemarks.first else { return nil }
+            
+            // 組合地址
+            var components: [String] = []
+            if let city = placemark.locality { components.append(city) }
+            if let district = placemark.subLocality { components.append(district) }
+            if let street = placemark.thoroughfare { components.append(street) }
+            if let number = placemark.subThoroughfare { components.append(number) }
+            
+            return components.isEmpty ? nil : components.joined(separator: "")
+        } catch {
+            return nil
+        }
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+
+extension LocationManager: CLLocationManagerDelegate {
+    
+    /// 授權狀態變更
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor in
+            authorizationStatus = status
+            
+            switch status {
+            case .authorizedAlways:
+                // 已取得「永遠允許」，可以啟動背景定位
+                startSignificantLocationMonitoring()
+            case .authorizedWhenInUse:
+                // 只有「使用期間」，嘗試升級
+                locationManager.requestAlwaysAuthorization()
+            case .denied, .restricted:
+                locationError = "定位權限被拒絕，請到設定中開啟"
+            case .notDetermined:
+                break
+            @unknown default:
+                break
+            }
+        }
+    }
+    
+    /// 收到位置更新
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let clLocation = locations.last else { return }
+        
+        let location = Location.from(clLocation: clLocation)
+        Task { @MainActor in
+            currentLocation = location
+            onLocationUpdate?(location)
+        }
+    }
+    
+    /// 定位失敗
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let message = error.localizedDescription
+        Task { @MainActor in
+            locationError = message
+        }
+    }
+    
+    /// 進入地理圍欄
+    nonisolated func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        guard let circularRegion = region as? CLCircularRegion else { return }
+        let event = GeofenceEvent(
+            regionId: circularRegion.identifier,
+            type: .entry,
+            timestamp: Date()
+        )
+        Task { @MainActor in
+            onGeofenceEvent?(event)
+        }
+    }
+    
+    /// 離開地理圍欄
+    nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        guard let circularRegion = region as? CLCircularRegion else { return }
+        let event = GeofenceEvent(
+            regionId: circularRegion.identifier,
+            type: .exit,
+            timestamp: Date()
+        )
+        Task { @MainActor in
+            onGeofenceEvent?(event)
+        }
+    }
+    
+    /// 圍欄監控失敗
+    nonisolated func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
+        let message = "圍欄監控失敗：\(error.localizedDescription)"
+        Task { @MainActor in
+            locationError = message
+        }
+    }
+}
+
+// MARK: - 圍欄事件
+
+/// 地理圍欄事件
+struct GeofenceEvent: Sendable {
+    /// 觸發的圍欄 ID
+    let regionId: String
+    /// 事件類型
+    let type: EventType
+    /// 觸發時間
+    let timestamp: Date
+    
+    /// 圍欄事件類型
+    enum EventType: Sendable {
+        case entry  // 進入
+        case exit   // 離開
+    }
+}
