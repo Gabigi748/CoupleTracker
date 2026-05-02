@@ -441,7 +441,7 @@ final class APIService {
             // 成功 — 解析 API 包裝格式 {"success":true,"data":{...}}
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            // 不使用 convertFromSnakeCase — 各 model 用明確的 CodingKeys 處理
             let wrapper = try decoder.decode(APIResponse<T>.self, from: data)
             guard let result = wrapper.data else {
                 throw CoupleTrackerError.serverError(wrapper.error ?? "回應資料為空")
@@ -554,6 +554,11 @@ struct AuthResponse: Codable {
 struct PairCodeResponse: Codable {
     let code: String
     let expiresAt: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case code
+        case expiresAt = "expires_at"
+    }
 }
 
 /// 配對狀態回應
@@ -561,6 +566,12 @@ struct PairStatusResponse: Codable {
     let isPaired: Bool
     let partnerUid: String?
     let partner: AppUser?
+    
+    enum CodingKeys: String, CodingKey {
+        case isPaired = "is_paired"
+        case partnerUid = "partner_uid"
+        case partner
+    }
 }
 
 /// 空回應（用於不需要回傳資料的 API）
