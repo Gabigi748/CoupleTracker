@@ -53,13 +53,13 @@ jobs:
               info:
                 path: App/Info.plist
                 properties:
-                  CFBundleDisplayName: "小寧與我"
+                  CFBundleDisplayName: "小寧和魚魚"
                   UILaunchScreen:
                     UIColorName: ""
                   UIRequiresFullScreen: true
                   UISupportedInterfaceOrientations:
                     - UIInterfaceOrientationPortrait
-                  NSLocationWhenInUseUsageDescription: "「小寧與我」需要您的位置來即時顯示在地圖上，讓對方知道你在哪裡"
+                  NSLocationWhenInUseUsageDescription: "「小寧和魚魚」需要您的位置來即時顯示在地圖上，讓對方知道你在哪裡"
                   NSLocationAlwaysAndWhenInUseUsageDescription: "請選擇「永遠允許」，這樣即使 App 在背景也能持續更新位置給對方"
                   NSLocationAlwaysUsageDescription: "請選擇「永遠允許」，這樣即使 App 在背景也能持續更新位置給對方"
                   NSAppTransportSecurity:

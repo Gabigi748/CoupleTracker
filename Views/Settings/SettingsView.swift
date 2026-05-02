@@ -265,7 +265,7 @@ struct SettingsView: View {
             HStack {
                 Spacer()
                 VStack(spacing: 4) {
-                    Text("小寧與我")
+                    Text("小寧和魚魚")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("版本 1.0.0 (1)")
