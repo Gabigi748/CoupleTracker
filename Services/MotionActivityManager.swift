@@ -96,8 +96,9 @@ final class MotionActivityManager {
                 guard let self else { return }
                 
                 if let error = error as? NSError {
-                    if error.domain == CMErrorDomain.self as String,
-                       error.code == CMError.motionActivityNotAuthorized.rawValue {
+                    // CMErrorMotionActivityNotAuthorized = 105
+                    if error.domain == "CMErrorDomain",
+                       error.code == 105 {
                         print("⚠️ Motion Activity 未授權")
                         self.isAuthorized = false
                         return
