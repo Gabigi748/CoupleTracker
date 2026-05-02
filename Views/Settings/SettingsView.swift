@@ -188,7 +188,7 @@ struct SettingsView: View {
                     }
                 } icon: {
                     Image(systemName: "location.circle.fill")
-                        .foregroundStyle(AppTheme.blue)
+                        .foregroundStyle(.blue)
                 }
                 
                 Spacer()
@@ -208,7 +208,7 @@ struct SettingsView: View {
                     Text("圍欄進出通知")
                 } icon: {
                     Image(systemName: "bell.badge.fill")
-                        .foregroundStyle(AppTheme.orange)
+                        .foregroundStyle(.orange)
                 }
                 
                 Spacer()
