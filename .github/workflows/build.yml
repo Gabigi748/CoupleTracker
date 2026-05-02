@@ -45,11 +45,21 @@ jobs:
               platform: iOS
               sources:
                 - path: App
+                  excludes:
+                    - "Info.plist"
                 - path: Models
                 - path: Services
                 - path: Views
               info:
                 path: App/Info.plist
+                properties:
+                  CFBundleDisplayName: CoupleTracker
+                  NSLocationWhenInUseUsageDescription: "需要您的位置來顯示在地圖上"
+                  NSLocationAlwaysAndWhenInUseUsageDescription: "需要背景定位來即時更新位置給對方"
+                  NSLocationAlwaysUsageDescription: "需要背景定位來即時更新位置給對方"
+                  UIBackgroundModes:
+                    - location
+                    - remote-notification
               settings:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.fish.coupletracker
@@ -60,6 +70,11 @@ jobs:
           
           brew install xcodegen
           xcodegen generate
+          
+          echo "=== Verify Info.plist contents ==="
+          cat App/Info.plist | head -50
+          echo "=== Check generated project plist setting ==="
+          grep -A2 "INFOPLIST" CoupleTracker.xcodeproj/project.pbxproj | head -10
 
       - name: Build for iOS Simulator (Debug)
         continue-on-error: true
@@ -84,6 +99,17 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty
+
+      - name: Verify IPA Info.plist
+        if: always()
+        run: |
+          echo "=== Check archived Info.plist ==="
+          if [ -f "build/CoupleTracker.xcarchive/Products/Applications/CoupleTracker.app/Info.plist" ]; then
+            plutil -p "build/CoupleTracker.xcarchive/Products/Applications/CoupleTracker.app/Info.plist" | grep -i "location\|background"
+          else
+            echo "No Info.plist found in archive!"
+            find build/CoupleTracker.xcarchive -name "Info.plist" 2>/dev/null
+          fi
 
       - name: Export unsigned IPA
         run: |
