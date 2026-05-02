@@ -2,13 +2,14 @@
 // CoupleTracker
 //
 // 地理圍欄管理器 — CRUD 圍欄區域，與 LocationManager 協作監控
+// 已移除 Firebase 依賴，改用 APIService 呼叫自建後端
 
 import Foundation
 import Observation
-import FirebaseFirestore
 
 /// 地理圍欄管理器
 /// 負責圍欄的 CRUD 操作，並與 LocationManager 協作進行實際監控
+@MainActor
 @Observable
 final class GeofenceManager {
     
@@ -25,14 +26,11 @@ final class GeofenceManager {
     
     // MARK: - 私有屬性
     
-    /// Firestore 資料庫參考
-    private let db = Firestore.firestore()
-    
     /// 位置管理器（用於實際監控圍欄）
     private let locationManager: LocationManager
     
-    /// 圍欄列表監聽器
-    private var zonesListener: ListenerRegistration?
+    /// API 服務參考
+    private weak var apiService: APIService?
     
     // MARK: - 初始化
     
@@ -42,118 +40,107 @@ final class GeofenceManager {
         self.locationManager = locationManager
     }
     
-    deinit {
-        zonesListener?.remove()
+    /// 設定 API 服務參考
+    /// - Parameter apiService: APIService 實例
+    func configure(with apiService: APIService) {
+        self.apiService = apiService
     }
     
     // MARK: - CRUD 操作
     
-    /// 載入用戶的所有圍欄區域
-    /// - Parameter uid: 用戶 UID
-    func loadZones(for uid: String) {
-        zonesListener?.remove()
+    /// 從後端載入所有圍欄區域
+    func loadZones() async {
+        isLoading = true
+        defer { isLoading = false }
         
-        zonesListener = db.collection("users").document(uid)
-            .collection("geofences")
-            .addSnapshotListener { [weak self] snapshot, error in
-                guard let self, let snapshot else {
-                    self?.errorMessage = error?.localizedDescription
-                    return
-                }
-                
-                let loadedZones = snapshot.documents.compactMap { doc in
-                    try? doc.data(as: GeofenceZone.self)
-                }
-                
-                Task { @MainActor in
-                    self.zones = loadedZones
-                    // 重新同步監控狀態
-                    await self.syncMonitoredRegions()
-                }
-            }
+        do {
+            guard let apiService else { return }
+            zones = try await apiService.getGeofences()
+            // 同步監控狀態
+            await syncMonitoredRegions()
+        } catch {
+            errorMessage = "載入圍欄失敗：\(error.localizedDescription)"
+        }
     }
     
     /// 新增圍欄區域
-    /// - Parameters:
-    ///   - uid: 用戶 UID
-    ///   - zone: 要新增的圍欄
-    func addZone(for uid: String, zone: GeofenceZone) async throws {
+    /// - Parameter zone: 要新增的圍欄
+    func addZone(_ zone: GeofenceZone) async throws {
         // 檢查數量限制
         guard zones.count < GeofenceZone.maxGeofences else {
             throw CoupleTrackerError.geofenceLimitReached
         }
         
-        // 寫入 Firestore
-        try await db.collection("users").document(uid)
-            .collection("geofences")
-            .document(zone.id)
-            .setData(from: zone)
+        guard let apiService else { return }
+        
+        // 呼叫 API 新增
+        let created = try await apiService.createGeofence(zone)
+        zones.append(created)
         
         // 開始監控
-        _ = await locationManager.startMonitoring(zone: zone)
+        _ = locationManager.startMonitoring(zone: created)
     }
     
     /// 更新圍欄區域
-    /// - Parameters:
-    ///   - uid: 用戶 UID
-    ///   - zone: 更新後的圍欄
-    func updateZone(for uid: String, zone: GeofenceZone) async throws {
-        // 先停止舊的監控
-        await locationManager.stopMonitoring(zone: zone)
+    /// - Parameter zone: 更新後的圍欄
+    func updateZone(_ zone: GeofenceZone) async throws {
+        guard let apiService else { return }
         
-        // 更新 Firestore
-        try await db.collection("users").document(uid)
-            .collection("geofences")
-            .document(zone.id)
-            .setData(from: zone)
+        // 先停止舊的監控
+        locationManager.stopMonitoring(zone: zone)
+        
+        // 呼叫 API 更新
+        try await apiService.updateGeofence(zone)
+        
+        // 更新本地列表
+        if let index = zones.firstIndex(where: { $0.id == zone.id }) {
+            zones[index] = zone
+        }
         
         // 重新開始監控
-        _ = await locationManager.startMonitoring(zone: zone)
+        _ = locationManager.startMonitoring(zone: zone)
     }
     
     /// 刪除圍欄區域
-    /// - Parameters:
-    ///   - uid: 用戶 UID
-    ///   - zone: 要刪除的圍欄
-    func deleteZone(for uid: String, zone: GeofenceZone) async throws {
-        // 停止監控
-        await locationManager.stopMonitoring(zone: zone)
+    /// - Parameter zone: 要刪除的圍欄
+    func deleteZone(_ zone: GeofenceZone) async throws {
+        guard let apiService else { return }
         
-        // 從 Firestore 刪除
-        try await db.collection("users").document(uid)
-            .collection("geofences")
-            .document(zone.id)
-            .delete()
+        // 停止監控
+        locationManager.stopMonitoring(zone: zone)
+        
+        // 呼叫 API 刪除
+        try await apiService.deleteGeofence(zone.id)
+        
+        // 從本地列表移除
+        zones.removeAll { $0.id == zone.id }
     }
     
     /// 刪除所有圍欄
-    /// - Parameter uid: 用戶 UID
-    func deleteAllZones(for uid: String) async throws {
-        // 停止所有監控
-        await locationManager.stopAllMonitoring()
+    func deleteAllZones() async throws {
+        guard let apiService else { return }
         
-        // 批次刪除 Firestore 文件
-        let batch = db.batch()
+        // 停止所有監控
+        locationManager.stopAllMonitoring()
+        
+        // 逐一刪除（後端可能沒有批次刪除 API）
         for zone in zones {
-            let ref = db.collection("users").document(uid)
-                .collection("geofences")
-                .document(zone.id)
-            batch.deleteDocument(ref)
+            try await apiService.deleteGeofence(zone.id)
         }
-        try await batch.commit()
+        
+        zones.removeAll()
     }
     
     // MARK: - 監控同步
     
-    /// 同步 Core Location 監控的圍欄與 Firestore 中的圍欄列表
-    /// 確保兩邊一致
+    /// 同步 Core Location 監控的圍欄與後端的圍欄列表
     private func syncMonitoredRegions() async {
         // 先停止所有監控
-        await locationManager.stopAllMonitoring()
+        locationManager.stopAllMonitoring()
         
         // 重新監控所有圍欄
         for zone in zones {
-            _ = await locationManager.startMonitoring(zone: zone)
+            _ = locationManager.startMonitoring(zone: zone)
         }
     }
     

@@ -1,16 +1,17 @@
 // NotificationService.swift
 // CoupleTracker
 //
-// 推播通知服務 — 本地通知、FCM 遠端推播、SOS 緊急通知
+// 推播通知服務 — 本地通知 + APNs Token 上傳到自建後端
+// 已移除 FCM 依賴，改用 APNs 直接推播
 
 import Foundation
 import Observation
 import UserNotifications
-import FirebaseMessaging
-import FirebaseFirestore
+import UIKit
 
 /// 推播通知服務
-/// 管理本地通知（圍欄觸發）與遠端推播（FCM）
+/// 管理本地通知（圍欄觸發、SOS）與 APNs Token 上傳
+@MainActor
 @Observable
 final class NotificationService: NSObject {
     
@@ -19,26 +20,31 @@ final class NotificationService: NSObject {
     /// 通知授權狀態
     var isAuthorized: Bool = false
     
-    /// FCM Token（用於遠端推播）
-    var fcmToken: String?
+    /// APNs Device Token（十六進位字串）
+    var deviceToken: String?
     
     /// 錯誤訊息
     var errorMessage: String?
     
     // MARK: - 私有屬性
     
-    /// Firestore 資料庫參考
-    private let db = Firestore.firestore()
-    
     /// 通知中心
     private let notificationCenter = UNUserNotificationCenter.current()
+    
+    /// API 服務參考（用於上傳 Token）
+    private weak var apiService: APIService?
     
     // MARK: - 初始化
     
     override init() {
         super.init()
         notificationCenter.delegate = self
-        Messaging.messaging().delegate = self
+    }
+    
+    /// 設定 API 服務參考
+    /// - Parameter apiService: APIService 實例
+    func configure(with apiService: APIService) {
+        self.apiService = apiService
     }
     
     // MARK: - 權限請求
@@ -53,6 +59,31 @@ final class NotificationService: NSObject {
     func checkAuthorizationStatus() async {
         let settings = await notificationCenter.notificationSettings()
         isAuthorized = settings.authorizationStatus == .authorized
+    }
+    
+    // MARK: - APNs Token 處理
+    
+    /// 處理收到的 APNs Device Token
+    /// - Parameter tokenData: 原始 token 資料
+    func handleDeviceToken(_ tokenData: Data) {
+        // 轉換為十六進位字串
+        let tokenString = tokenData.map { String(format: "%02.2hhx", $0) }.joined()
+        deviceToken = tokenString
+        
+        // 上傳到自建後端
+        Task {
+            do {
+                try await apiService?.uploadAPNsToken(tokenString)
+            } catch {
+                errorMessage = "APNs Token 上傳失敗：\(error.localizedDescription)"
+            }
+        }
+    }
+    
+    /// 推播註冊失敗處理
+    /// - Parameter error: 錯誤
+    func handleRegistrationError(_ error: Error) {
+        errorMessage = "推播註冊失敗：\(error.localizedDescription)"
     }
     
     // MARK: - 本地通知（圍欄觸發）
@@ -76,7 +107,9 @@ final class NotificationService: NSObject {
         
         notificationCenter.add(request) { [weak self] error in
             if let error {
-                self?.errorMessage = "通知發送失敗：\(error.localizedDescription)"
+                Task { @MainActor [weak self] in
+                    self?.errorMessage = "通知發送失敗：\(error.localizedDescription)"
+                }
             }
         }
     }
@@ -132,66 +165,6 @@ final class NotificationService: NSObject {
         notificationCenter.add(request)
     }
     
-    /// 透過 FCM 發送 SOS 遠端推播給對方
-    /// - Parameters:
-    ///   - partnerUid: 對方 UID
-    ///   - senderName: 發送者名稱
-    ///   - location: 發送者位置
-    func sendRemoteSOSNotification(partnerUid: String, senderName: String, location: Location?) async throws {
-        // 取得對方的 FCM Token
-        let document = try await db.collection("users").document(partnerUid)
-            .collection("tokens")
-            .document("fcm")
-            .getDocument()
-        
-        guard let data = document.data(),
-              let partnerToken = data["token"] as? String else {
-            throw CoupleTrackerError.notPaired
-        }
-        
-        // 寫入推播佇列（由 Cloud Functions 處理實際發送）
-        var notificationData: [String: Any] = [
-            "to_token": partnerToken,
-            "title": "🆘 緊急求助",
-            "body": "\(senderName) 發出了緊急求助！",
-            "type": "sos",
-            "created_at": Timestamp(date: Date())
-        ]
-        
-        if let location {
-            notificationData["latitude"] = location.latitude
-            notificationData["longitude"] = location.longitude
-        }
-        
-        try await db.collection("notification_queue").addDocument(data: notificationData)
-    }
-    
-    // MARK: - FCM Token 管理
-    
-    /// 儲存 FCM Token 到 Firestore
-    /// - Parameter uid: 用戶 UID
-    func saveFCMToken(for uid: String) async throws {
-        guard let token = fcmToken else { return }
-        
-        try await db.collection("users").document(uid)
-            .collection("tokens")
-            .document("fcm")
-            .setData([
-                "token": token,
-                "updated_at": Timestamp(date: Date()),
-                "platform": "ios"
-            ])
-    }
-    
-    /// 刪除 FCM Token（登出時呼叫）
-    /// - Parameter uid: 用戶 UID
-    func removeFCMToken(for uid: String) async throws {
-        try await db.collection("users").document(uid)
-            .collection("tokens")
-            .document("fcm")
-            .delete()
-    }
-    
     // MARK: - 通知分類設定
     
     /// 註冊通知動作分類
@@ -228,10 +201,10 @@ final class NotificationService: NSObject {
 
 // MARK: - UNUserNotificationCenterDelegate
 
-extension NotificationService: UNUserNotificationCenterDelegate {
+extension NotificationService: @preconcurrency UNUserNotificationCenterDelegate {
     
     /// 前景收到通知時的處理
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
@@ -240,7 +213,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     }
     
     /// 用戶點擊通知時的處理
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
@@ -265,16 +238,6 @@ extension NotificationService: UNUserNotificationCenterDelegate {
         default:
             break
         }
-    }
-}
-
-// MARK: - MessagingDelegate
-
-extension NotificationService: MessagingDelegate {
-    
-    /// FCM Token 更新回調
-    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        self.fcmToken = fcmToken
     }
 }
 

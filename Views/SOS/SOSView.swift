@@ -22,9 +22,6 @@ struct SOSView: View {
     /// 是否已觸發 SOS
     @State private var isTriggered = false
     
-    /// 倒數計時器
-    @State private var holdTimer: Timer?
-    
     /// 脈動動畫
     @State private var pulseScale: CGFloat = 1.0
     
@@ -292,16 +289,19 @@ struct SOSView: View {
         let impactGenerator = UIImpactFeedbackGenerator(style: .heavy)
         impactGenerator.impactOccurred()
         
-        // 啟動計時器，逐步增加進度
-        holdTimer = Timer.scheduledTimer(withTimeInterval: timerInterval, repeats: true) { timer in
-            let increment = timerInterval / holdDuration
-            holdProgress += increment
-            
-            if holdProgress >= 1.0 {
-                // 達到 3 秒，觸發 SOS
-                timer.invalidate()
-                holdTimer = nil
-                triggerSOS()
+        // 使用 Task + AsyncStream 避免 Timer closure 的 Sendable 問題
+        Task { @MainActor in
+            let start = Date()
+            while isHolding {
+                try? await Task.sleep(for: .milliseconds(Int(timerInterval * 1000)))
+                guard isHolding else { break }
+                let elapsed = Date().timeIntervalSince(start)
+                holdProgress = min(elapsed / holdDuration, 1.0)
+                
+                if holdProgress >= 1.0 {
+                    triggerSOS()
+                    break
+                }
             }
         }
     }
@@ -309,8 +309,6 @@ struct SOSView: View {
     /// 取消長按（手指放開）
     private func cancelHolding() {
         isHolding = false
-        holdTimer?.invalidate()
-        holdTimer = nil
         
         // 進度歸零（帶動畫）
         withAnimation(.easeOut(duration: 0.3)) {

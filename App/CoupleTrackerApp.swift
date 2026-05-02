@@ -1,37 +1,35 @@
 // CoupleTrackerApp.swift
 // CoupleTracker
 //
-// App 入口 — Firebase 初始化、全域服務注入
+// App 入口 — 初始化 APIService、WebSocketManager、全域服務注入
+// 已移除 Firebase 依賴
 
 import SwiftUI
-import FirebaseCore
-import FirebaseMessaging
 import UIKit
 
 // MARK: - App Delegate
 
-/// App Delegate — 處理 Firebase 初始化與推播通知註冊
+/// App Delegate — 處理推播通知註冊與 APNs Token
 class AppDelegate: NSObject, UIApplicationDelegate {
+    
+    /// 通知服務參考（由 App 注入）
+    var notificationService: NotificationService?
     
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // 初始化 Firebase
-        FirebaseApp.configure()
-        
-        // 註冊遠端推播
+        // 註冊遠端推播（APNs）
         application.registerForRemoteNotifications()
-        
         return true
     }
     
-    /// 收到 APNs Token，轉交給 Firebase Messaging
+    /// 收到 APNs Device Token
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        Messaging.messaging().apnsToken = deviceToken
+        notificationService?.handleDeviceToken(deviceToken)
     }
     
     /// 推播註冊失敗
@@ -39,6 +37,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
+        notificationService?.handleRegistrationError(error)
         print("❌ 推播註冊失敗：\(error.localizedDescription)")
     }
 }
@@ -57,8 +56,11 @@ struct CoupleTrackerApp: App {
     /// 位置管理器
     @State private var locationManager: LocationManager
     
-    /// Firebase 服務
-    @State private var firebaseService = FirebaseService()
+    /// API 服務（取代原本的 FirebaseService）
+    @State private var apiService = APIService()
+    
+    /// WebSocket 管理器（即時通訊）
+    @State private var webSocketManager = WebSocketManager()
     
     /// 通知服務
     @State private var notificationService = NotificationService()
@@ -81,7 +83,8 @@ struct CoupleTrackerApp: App {
         WindowGroup {
             ContentView()
                 .environment(locationManager)
-                .environment(firebaseService)
+                .environment(apiService)
+                .environment(webSocketManager)
                 .environment(notificationService)
                 .environment(geofenceManager)
                 .onAppear {
@@ -94,6 +97,12 @@ struct CoupleTrackerApp: App {
     
     /// 初始化各項服務
     private func setupServices() {
+        // 設定 App Delegate 的通知服務參考
+        delegate.notificationService = notificationService
+        
+        // 設定通知服務的 API 參考
+        notificationService.configure(with: apiService)
+        
         // 請求通知權限
         Task {
             try? await notificationService.requestAuthorization()
@@ -108,11 +117,16 @@ struct CoupleTrackerApp: App {
             handleGeofenceEvent(event)
         }
         
-        // 設定位置更新回調
+        // 設定位置更新回調 — 透過 WebSocket 發送位置
         locationManager.onLocationUpdate = { location in
-            Task {
-                try? await firebaseService.updateLocation(location)
+            Task { @MainActor in
+                webSocketManager.sendLocation(location)
             }
+        }
+        
+        // 如果已登入，建立 WebSocket 連線
+        if apiService.isAuthenticated, let token = apiService.currentToken {
+            webSocketManager.connect(token: token)
         }
         
         // 同步電量
@@ -122,7 +136,7 @@ struct CoupleTrackerApp: App {
     /// 處理圍欄事件
     private func handleGeofenceEvent(_ event: GeofenceEvent) {
         guard let zone = geofenceManager.zone(by: event.regionId),
-              let partnerName = firebaseService.partner?.name ?? firebaseService.currentUser?.name else {
+              let partnerName = apiService.partnerUser?.name ?? apiService.currentUser?.name else {
             return
         }
         
@@ -146,28 +160,33 @@ struct CoupleTrackerApp: App {
         let level = Int(UIDevice.current.batteryLevel * 100)
         if level >= 0 {
             Task {
-                try? await firebaseService.updateBatteryLevel(level)
+                try? await apiService.updateBatteryLevel(level)
             }
         }
     }
 }
 
-// MARK: - ContentView（暫時佔位）
+// MARK: - ContentView
 
-/// 主畫面（暫時佔位，後續實作）
+/// 主畫面 — 根據登入狀態切換
 struct ContentView: View {
-    @Environment(FirebaseService.self) private var firebaseService
+    @Environment(APIService.self) private var apiService
     
     var body: some View {
         Group {
-            if firebaseService.isAuthenticated {
-                // 已登入 → 主畫面（待實作）
-                Text("🗺️ CoupleTracker")
-                    .font(.largeTitle)
+            if apiService.isAuthenticated {
+                if apiService.currentUser?.isPaired == true {
+                    // 已登入且已配對 → 主畫面
+                    MainTabView()
+                } else {
+                    // 已登入但未配對 → 配對頁面
+                    NavigationStack {
+                        PairView()
+                    }
+                }
             } else {
-                // 未登入 → 登入畫面（待實作）
-                Text("請登入")
-                    .font(.title)
+                // 未登入 → 登入畫面
+                LoginView()
             }
         }
     }
