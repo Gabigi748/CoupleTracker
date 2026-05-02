@@ -92,7 +92,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || true
+            2>&1 | tail -100 || true
 
       - name: Archive for iOS (Release)
         run: |
@@ -104,8 +104,7 @@ jobs:
             -archivePath build/CoupleTracker.xcarchive \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            | xcpretty
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Verify IPA Info.plist
         if: always()
