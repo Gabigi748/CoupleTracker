@@ -23,7 +23,7 @@ jobs:
 
       - name: Install iOS platform
         run: |
-          xcodebuild -downloadPlatform iOS || true
+          xcodebuild -downloadPlatform iOS || echo "iOS platform download failed, continuing with archive only"
 
       - name: Generate Xcode project
         run: |
@@ -66,6 +66,7 @@ jobs:
           xcodegen generate
 
       - name: Build for iOS Simulator (Debug)
+        continue-on-error: true
         run: |
           xcodebuild build \
             -project CoupleTracker.xcodeproj \
@@ -86,7 +87,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || true
+            | xcpretty
 
       - name: Export unsigned IPA
         run: |
@@ -98,17 +99,17 @@ jobs:
             zip -r ../../../ipa/CoupleTracker-unsigned.ipa Payload
             echo "IPA created successfully!"
           else
-            echo "Archive directory contents:"
+            echo "Archive failed - no .app found"
             find build/CoupleTracker.xcarchive -type d 2>/dev/null || echo "No archive found"
+            exit 1
           fi
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: CoupleTracker-unsigned
           path: build/ipa/*.ipa
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Upload archive (fallback)
         uses: actions/upload-artifact@v4
