@@ -61,6 +61,10 @@ final class MotionActivityManager: @unchecked Sendable {
     /// 活動變更回調
     @MainActor var onActivityChanged: ((MotionActivity) -> Void)?
     
+    // MARK: - 初始化
+    
+    nonisolated init() {}
+    
     // MARK: - 公開方法
     
     @MainActor
