@@ -86,10 +86,34 @@ final class MotionActivityManager {
         }
         
         guard !isMonitoring else { return }
-        isMonitoring = true
         
-        startActivityUpdates()
-        startPedometerUpdates()
+        // 先用一次性查詢來觸發權限請求，確認授權後再開始持續監控
+        let now = Date()
+        let oneMinuteAgo = now.addingTimeInterval(-60)
+        
+        activityManager.queryActivityStarting(from: oneMinuteAgo, to: now, to: OperationQueue.main) { [weak self] _, error in
+            Task { @MainActor in
+                guard let self else { return }
+                
+                if let error = error as? NSError {
+                    if error.domain == CMErrorDomain.self as String,
+                       error.code == CMError.motionActivityNotAuthorized.rawValue {
+                        print("⚠️ Motion Activity 未授權")
+                        self.isAuthorized = false
+                        return
+                    }
+                    // 其他錯誤也不要閃退
+                    print("⚠️ Motion Activity 查詢錯誤: \(error.localizedDescription)")
+                    return
+                }
+                
+                // 授權成功，開始持續監控
+                self.isAuthorized = true
+                self.isMonitoring = true
+                self.startActivityUpdates()
+                self.startPedometerUpdates()
+            }
+        }
     }
     
     /// 停止監控
@@ -104,13 +128,20 @@ final class MotionActivityManager {
     /// 開始接收活動更新
     private func startActivityUpdates() {
         // CMMotionActivityManager 的回調在 OperationQueue 上，不在 MainActor
-        activityManager.startActivityUpdates(to: OperationQueue()) { [weak self] activity in
+        let queue = OperationQueue()
+        queue.name = "com.fish.coupletracker.motion"
+        queue.maxConcurrentOperationCount = 1
+        
+        activityManager.startActivityUpdates(to: queue) { [weak self] activity in
             guard let activity else { return }
+            
+            // 忽略信心度太低的結果
+            guard activity.confidence != .low else { return }
             
             let motionActivity = Self.mapActivity(activity)
             
             // 切換到 MainActor 更新 UI 狀態
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 guard let self else { return }
                 let previousActivity = self.currentActivity
                 self.currentActivity = motionActivity
