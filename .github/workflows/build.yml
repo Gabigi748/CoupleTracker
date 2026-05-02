@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:  # 手動觸發
+  workflow_dispatch:
 
 jobs:
   build:
@@ -21,12 +21,65 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Resolve dependencies
-        run: xcodebuild -resolvePackageDependencies -scheme CoupleTracker -destination 'generic/platform=iOS'
+      - name: Install iOS platform
+        run: |
+          xcodebuild -downloadPlatform iOS || true
 
-      - name: Build for iOS (Debug, no signing)
+      - name: Generate Xcode project
+        run: |
+          cat > project.yml << 'EOF'
+          name: CoupleTracker
+          options:
+            bundleIdPrefix: com.fish
+            deploymentTarget:
+              iOS: "17.0"
+            xcodeVersion: "16.0"
+          settings:
+            base:
+              CODE_SIGN_IDENTITY: ""
+              CODE_SIGNING_REQUIRED: "NO"
+              CODE_SIGNING_ALLOWED: "NO"
+          targets:
+            CoupleTracker:
+              type: application
+              platform: iOS
+              sources:
+                - path: App
+                - path: Models
+                - path: Services
+                - path: Views
+              settings:
+                base:
+                  INFOPLIST_GENERATION_MODE: GeneratedFile
+                  PRODUCT_BUNDLE_IDENTIFIER: com.fish.coupletracker
+                  MARKETING_VERSION: "1.0.0"
+                  CURRENT_PROJECT_VERSION: "1"
+                  GENERATE_INFOPLIST_FILE: "YES"
+                  SWIFT_VERSION: "6.0"
+                  UILaunchScreen: {}
+                  NSLocationWhenInUseUsageDescription: "需要您的位置來顯示在地圖上"
+                  NSLocationAlwaysAndWhenInUseUsageDescription: "需要背景定位來即時更新位置給對方"
+                  UIBackgroundModes: [location, remote-notification]
+              dependencies:
+                - package: firebase-ios-sdk
+                  product: FirebaseAuth
+                - package: firebase-ios-sdk
+                  product: FirebaseFirestore
+                - package: firebase-ios-sdk
+                  product: FirebaseMessaging
+          packages:
+            firebase-ios-sdk:
+              url: https://github.com/firebase/firebase-ios-sdk.git
+              from: "11.0.0"
+          EOF
+          
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build for iOS Simulator (Debug)
         run: |
           xcodebuild build \
+            -project CoupleTracker.xcodeproj \
             -scheme CoupleTracker \
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
@@ -36,6 +89,7 @@ jobs:
       - name: Archive for iOS (Release)
         run: |
           xcodebuild archive \
+            -project CoupleTracker.xcodeproj \
             -scheme CoupleTracker \
             -destination 'generic/platform=iOS' \
             -configuration Release \
@@ -53,8 +107,10 @@ jobs:
             mkdir -p Payload
             cp -r *.app Payload/
             zip -r ../../../ipa/CoupleTracker-unsigned.ipa Payload
+            echo "IPA created successfully!"
           else
-            echo "Archive not found, skipping IPA export"
+            echo "Archive directory contents:"
+            find build/CoupleTracker.xcarchive -type d 2>/dev/null || echo "No archive found"
           fi
 
       - name: Upload IPA artifact
@@ -63,4 +119,12 @@ jobs:
         with:
           name: CoupleTracker-unsigned
           path: build/ipa/*.ipa
+          if-no-files-found: warn
+
+      - name: Upload archive (fallback)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CoupleTracker-archive
+          path: build/CoupleTracker.xcarchive
           if-no-files-found: warn
