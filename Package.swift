@@ -28,7 +28,7 @@ let package = Package(
             dependencies: [],
             path: ".",
             exclude: ["Package.swift", "README.md"],
-            sources: ["Models", "Services", "App", "Views"]
+            sources: ["Models", "Services", "App", "Views", "Utils"]
         )
     ]
 )
