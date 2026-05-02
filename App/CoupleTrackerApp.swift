@@ -175,7 +175,18 @@ struct ContentView: View {
     var body: some View {
         Group {
             if apiService.isAuthenticated {
-                if apiService.currentUser?.isPaired == true {
+                if apiService.isRestoringSession {
+                    // 正在恢復 session，顯示 loading
+                    ZStack {
+                        Color(.systemBackground).ignoresSafeArea()
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("載入中...")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else if apiService.currentUser?.isPaired == true {
                     // 已登入且已配對 → 主畫面
                     MainTabView()
                 } else {

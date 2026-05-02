@@ -30,6 +30,9 @@ final class APIService {
     /// 是否正在載入
     var isLoading: Bool = false
     
+    /// 是否正在恢復 session（App 啟動時）
+    var isRestoringSession: Bool = false
+    
     /// 錯誤訊息
     var errorMessage: String?
     
@@ -62,9 +65,11 @@ final class APIService {
         if let savedToken = Self.loadTokenFromKeychain() {
             self.token = savedToken
             self.isAuthenticated = true
+            self.isRestoringSession = true
             // 驗證 Token 是否仍有效
             Task {
                 await restoreSession()
+                self.isRestoringSession = false
             }
         }
     }
