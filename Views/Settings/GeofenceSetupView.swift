@@ -2,49 +2,35 @@
 // CoupleTracker
 //
 // 地理圍欄管理頁面
-// - 已設定的圍欄列表（名稱、半徑、通知類型）
-// - 新增圍欄按鈕（sheet 呈現表單）
-// - 新增時：地圖選位、半徑滑桿、名稱輸入、通知類型選擇
-// - 滑動刪除已有圍欄
+// - 已設定的圍欄列表（可點擊查看詳情）
+// - 新增圍欄：地址搜尋（MKLocalSearch）+ 地圖選位 + 半徑滑桿
+// - 預設位置使用用戶當前位置
+// - 滑動刪除
+// - 接上真實 API（GET/POST/DELETE /api/geofences）
 
 import SwiftUI
 import MapKit
 
 struct GeofenceSetupView: View {
-    // MARK: - 假資料狀態
+    // MARK: - 狀態
     
     /// 圍欄列表
-    @State private var zones: [GeofenceZone] = [
-        GeofenceZone.create(
-            name: "家",
-            latitude: 25.0330,
-            longitude: 121.5654,
-            radius: 200,
-            notifyOnEntry: true,
-            notifyOnExit: true
-        ),
-        GeofenceZone.create(
-            name: "公司",
-            latitude: 25.0478,
-            longitude: 121.5170,
-            radius: 300,
-            notifyOnEntry: true,
-            notifyOnExit: false
-        ),
-        GeofenceZone.create(
-            name: "學校",
-            latitude: 25.0145,
-            longitude: 121.5319,
-            radius: 150,
-            notifyOnEntry: false,
-            notifyOnExit: true
-        ),
-    ]
+    @State private var zones: [GeofenceZone] = []
     
     /// 是否顯示新增圍欄 Sheet
     @State private var showAddSheet = false
     
+    /// 選中查看詳情的圍欄
+    @State private var selectedZone: GeofenceZone?
+    
+    /// 是否正在載入
+    @State private var isLoading = true
+    
+    /// 錯誤訊息
+    @State private var errorMessage: String?
+    
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(APIService.self) private var apiService
     
     /// 剩餘可用數量
     private var remainingSlots: Int {
@@ -74,15 +60,39 @@ struct GeofenceSetupView: View {
             }
         }
         .sheet(isPresented: $showAddSheet) {
-            AddGeofenceSheet(zones: $zones)
+            AddGeofenceSheet(zones: $zones, apiService: apiService)
         }
+        .sheet(item: $selectedZone) { zone in
+            GeofenceDetailSheet(zone: zone)
+        }
+        .task {
+            await loadGeofences()
+        }
+        .refreshable {
+            await loadGeofences()
+        }
+        .overlay {
+            if isLoading {
+                ProgressView("載入圍欄...")
+            }
+        }
+    }
+    
+    // MARK: - 載入圍欄
+    private func loadGeofences() async {
+        do {
+            zones = try await apiService.getGeofences()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
     }
     
     // MARK: - 狀態摘要
     private var summarySection: some View {
         Section {
             HStack(spacing: 12) {
-                // 圍欄圖示
                 ZStack {
                     Circle()
                         .fill(AppTheme.softGradient)
@@ -105,14 +115,23 @@ struct GeofenceSetupView: View {
                 Spacer()
             }
             .padding(.vertical, 4)
+            
+            if let errorMessage {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
     
     // MARK: - 圍欄列表
     private var zonesSection: some View {
         Section("我的圍欄") {
-            if zones.isEmpty {
-                // 空狀態
+            if zones.isEmpty && !isLoading {
                 VStack(spacing: 12) {
                     Image(systemName: "mappin.slash")
                         .font(.system(size: 40))
@@ -140,7 +159,12 @@ struct GeofenceSetupView: View {
                 .padding(.vertical, 24)
             } else {
                 ForEach(zones) { zone in
-                    geofenceRow(zone)
+                    Button {
+                        selectedZone = zone
+                    } label: {
+                        geofenceRow(zone)
+                    }
+                    .tint(.primary)
                 }
                 .onDelete(perform: deleteZones)
             }
@@ -150,7 +174,6 @@ struct GeofenceSetupView: View {
     /// 單一圍欄列
     private func geofenceRow(_ zone: GeofenceZone) -> some View {
         HStack(spacing: 12) {
-            // 圍欄圖示
             ZStack {
                 Circle()
                     .fill(AppTheme.softPink.opacity(0.3))
@@ -161,18 +184,15 @@ struct GeofenceSetupView: View {
                     .foregroundStyle(AppTheme.pink)
             }
             
-            // 圍欄資訊
             VStack(alignment: .leading, spacing: 4) {
                 Text(zone.name)
                     .font(.body.bold())
                 
                 HStack(spacing: 8) {
-                    // 半徑
                     Label("\(Int(zone.radius))m", systemImage: "circle.dashed")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    // 通知類型
                     Text(notifyTypeText(zone))
                         .font(.caption)
                         .foregroundStyle(AppTheme.purple)
@@ -187,15 +207,13 @@ struct GeofenceSetupView: View {
             
             Spacer()
             
-            // 狀態指示
-            Image(systemName: "antenna.radiowaves.left.and.right")
+            Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundStyle(.green)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
     
-    /// 根據名稱回傳對應圖示
     private func zoneIcon(for name: String) -> String {
         switch name {
         case "家": return "house.fill"
@@ -205,7 +223,6 @@ struct GeofenceSetupView: View {
         }
     }
     
-    /// 通知類型文字
     private func notifyTypeText(_ zone: GeofenceZone) -> String {
         switch (zone.notifyOnEntry, zone.notifyOnExit) {
         case (true, true): return "進出通知"
@@ -215,11 +232,111 @@ struct GeofenceSetupView: View {
         }
     }
     
-    /// 滑動刪除
     private func deleteZones(at offsets: IndexSet) {
-        // TODO: 呼叫 GeofenceManager 刪除
+        let zonesToDelete = offsets.map { zones[$0] }
+        
         withAnimation {
             zones.remove(atOffsets: offsets)
+        }
+        
+        for zone in zonesToDelete {
+            Task {
+                do {
+                    try await apiService.deleteGeofence(zone.id)
+                } catch {
+                    await loadGeofences()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 圍欄詳情 Sheet
+
+struct GeofenceDetailSheet: View {
+    let zone: GeofenceZone
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var cameraPosition: MapCameraPosition
+    
+    init(zone: GeofenceZone) {
+        self.zone = zone
+        _cameraPosition = State(initialValue: .region(
+            MKCoordinateRegion(
+                center: zone.coordinate,
+                // 讓地圖範圍大約是圍欄半徑的 3 倍，方便看到整個圍欄
+                latitudinalMeters: zone.radius * 3,
+                longitudinalMeters: zone.radius * 3
+            )
+        ))
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // 地圖顯示圍欄位置和範圍
+                Map(position: $cameraPosition) {
+                    // 圍欄範圍圓圈
+                    MapCircle(center: zone.coordinate, radius: zone.radius)
+                        .foregroundStyle(AppTheme.pink.opacity(0.2))
+                        .stroke(AppTheme.pink, lineWidth: 2)
+                    
+                    // Pin 標記
+                    Annotation(zone.name, coordinate: zone.coordinate) {
+                        VStack(spacing: 0) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.title)
+                                .foregroundStyle(AppTheme.pink)
+                            
+                            Image(systemName: "triangle.fill")
+                                .font(.system(size: 6))
+                                .foregroundStyle(AppTheme.pink)
+                                .rotationEffect(.degrees(180))
+                                .offset(y: -3)
+                        }
+                    }
+                }
+                .mapStyle(.standard)
+                .frame(height: 300)
+                
+                // 詳情資訊
+                List {
+                    Section("圍欄資訊") {
+                        LabeledContent("名稱", value: zone.name)
+                        LabeledContent("半徑", value: "\(Int(zone.radius)) 公尺")
+                        LabeledContent("通知類型") {
+                            Text(notifyTypeText)
+                                .foregroundStyle(AppTheme.purple)
+                        }
+                        LabeledContent("座標") {
+                            Text(String(format: "%.4f, %.4f", zone.latitude, zone.longitude))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+            .navigationTitle(zone.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") {
+                        dismiss()
+                    }
+                    .foregroundStyle(AppTheme.pink)
+                }
+            }
+        }
+    }
+    
+    private var notifyTypeText: String {
+        switch (zone.notifyOnEntry, zone.notifyOnExit) {
+        case (true, true): return "進出通知"
+        case (true, false): return "進入通知"
+        case (false, true): return "離開通知"
+        case (false, false): return "未啟用"
         }
     }
 }
@@ -227,44 +344,31 @@ struct GeofenceSetupView: View {
 // MARK: - 新增圍欄 Sheet
 
 struct AddGeofenceSheet: View {
-    /// 綁定外部圍欄列表
     @Binding var zones: [GeofenceZone]
+    var apiService: APIService
     
     // MARK: - 表單狀態
-    
-    /// 圍欄名稱
     @State private var name = ""
-    
-    /// 選擇的座標
-    @State private var selectedCoordinate = CLLocationCoordinate2D(
-        latitude: 25.0330,
-        longitude: 121.5654
-    )
-    
-    /// 圍欄半徑（公尺）
+    @State private var selectedCoordinate: CLLocationCoordinate2D?
     @State private var radius: Double = 200
-    
-    /// 進入時通知
     @State private var notifyOnEntry = true
-    
-    /// 離開時通知
     @State private var notifyOnExit = true
-    
-    /// 地圖相機位置
-    @State private var cameraPosition: MapCameraPosition = .region(
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 25.0330, longitude: 121.5654),
-            span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
-        )
-    )
-    
-    /// 是否已放置 Pin
+    @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var hasPinPlaced = false
+    @State private var isSaving = false
+    @State private var saveError: String?
+    @State private var hasInitializedCamera = false
+    
+    // 搜尋相關
+    @State private var searchText = ""
+    @State private var searchResults: [MKMapItem] = []
+    @State private var isSearching = false
+    @State private var showSearchResults = false
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(LocationManager.self) private var locationManager
     
-    /// 通知類型選項
     enum NotifyType: String, CaseIterable {
         case both = "進入 + 離開"
         case entry = "僅進入"
@@ -273,16 +377,15 @@ struct AddGeofenceSheet: View {
     
     @State private var selectedNotifyType: NotifyType = .both
     
-    /// 表單是否有效
     private var isFormValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && hasPinPlaced
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && hasPinPlaced && !isSaving
     }
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // 地圖選擇位置
+                    // 地址搜尋 + 地圖選擇位置
                     mapSection
                     
                     // 名稱輸入
@@ -294,7 +397,12 @@ struct AddGeofenceSheet: View {
                     // 通知類型
                     notifySection
                     
-                    // 儲存按鈕
+                    if let saveError {
+                        Text(saveError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                    
                     saveButton
                 }
                 .padding(16)
@@ -309,17 +417,47 @@ struct AddGeofenceSheet: View {
                     .foregroundStyle(AppTheme.pink)
                 }
             }
+            .onAppear {
+                initializeCameraToCurrentLocation()
+            }
         }
     }
     
-    // MARK: - 地圖區域
+    // MARK: - 初始化相機到當前位置
+    private func initializeCameraToCurrentLocation() {
+        guard !hasInitializedCamera else { return }
+        hasInitializedCamera = true
+        
+        if let currentLoc = locationManager.currentLocation {
+            cameraPosition = .region(MKCoordinateRegion(
+                center: currentLoc.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+            ))
+        } else {
+            // 沒有當前位置，預設台北
+            cameraPosition = .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 25.0330, longitude: 121.5654),
+                span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
+            ))
+        }
+    }
+    
+    // MARK: - 地圖區域（含搜尋）
     private var mapSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("選擇位置", systemImage: "mappin.circle.fill")
                 .font(.subheadline.bold())
                 .foregroundStyle(AppTheme.purple)
             
-            Text("點擊地圖放置圍欄中心點")
+            // 地址搜尋框
+            searchBar
+            
+            // 搜尋結果列表
+            if showSearchResults && !searchResults.isEmpty {
+                searchResultsList
+            }
+            
+            Text(hasPinPlaced ? "已選擇位置，點擊地圖可重新選擇" : "搜尋地址或點擊地圖放置圍欄中心點")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
@@ -327,20 +465,14 @@ struct AddGeofenceSheet: View {
             ZStack {
                 MapReader { proxy in
                     Map(position: $cameraPosition) {
-                        // 已放置的 Pin
-                        if hasPinPlaced {
-                            // 圍欄範圍圓圈
-                            MapCircle(
-                                center: selectedCoordinate,
-                                radius: radius
-                            )
-                            .foregroundStyle(AppTheme.pink.opacity(0.2))
-                            .stroke(AppTheme.pink, lineWidth: 2)
+                        if hasPinPlaced, let coord = selectedCoordinate {
+                            MapCircle(center: coord, radius: radius)
+                                .foregroundStyle(AppTheme.pink.opacity(0.2))
+                                .stroke(AppTheme.pink, lineWidth: 2)
                             
-                            // Pin 標記
                             Annotation(
                                 name.isEmpty ? "新圍欄" : name,
-                                coordinate: selectedCoordinate
+                                coordinate: coord
                             ) {
                                 VStack(spacing: 0) {
                                     Image(systemName: "mappin.circle.fill")
@@ -358,7 +490,6 @@ struct AddGeofenceSheet: View {
                     }
                     .mapStyle(.standard)
                     .onTapGesture { screenCoord in
-                        // 點擊地圖放置 Pin
                         if let coordinate = proxy.convert(screenCoord, from: .local) {
                             withAnimation(.spring(duration: 0.3)) {
                                 selectedCoordinate = coordinate
@@ -368,7 +499,6 @@ struct AddGeofenceSheet: View {
                     }
                 }
                 
-                // 未放置 Pin 時的提示
                 if !hasPinPlaced {
                     VStack {
                         Spacer()
@@ -391,6 +521,158 @@ struct AddGeofenceSheet: View {
         }
     }
     
+    // MARK: - 搜尋框
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                
+                TextField("搜尋地址或地名...", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .submitLabel(.search)
+                    .onSubmit {
+                        Task { await performSearch() }
+                    }
+                
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                        searchResults = []
+                        showSearchResults = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(colorScheme == .dark
+                          ? Color(.systemGray5)
+                          : Color(.systemGray6))
+            )
+            
+            // 搜尋按鈕
+            if !searchText.isEmpty {
+                Button {
+                    Task { await performSearch() }
+                } label: {
+                    if isSearching {
+                        ProgressView()
+                            .frame(width: 36, height: 36)
+                    } else {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(AppTheme.pink)
+                            .frame(width: 36, height: 36)
+                    }
+                }
+                .disabled(isSearching)
+            }
+        }
+    }
+    
+    // MARK: - 搜尋結果列表
+    private var searchResultsList: some View {
+        VStack(spacing: 0) {
+            ForEach(searchResults.prefix(5), id: \.self) { item in
+                Button {
+                    selectSearchResult(item)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.circle.fill")
+                            .foregroundStyle(AppTheme.pink)
+                            .frame(width: 24)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name ?? "未知地點")
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            
+                            if let address = item.placemark.formattedAddress {
+                                Text(address)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
+                
+                if item != searchResults.prefix(5).last {
+                    Divider()
+                        .padding(.leading, 46)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colorScheme == .dark
+                      ? Color(.systemGray5)
+                      : .white)
+                .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+        )
+    }
+    
+    // MARK: - 搜尋邏輯
+    private func performSearch() async {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        
+        isSearching = true
+        
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
+        // 優先搜尋台灣地區
+        request.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 23.5, longitude: 121.0),
+            span: MKCoordinateSpan(latitudeDelta: 5, longitudeDelta: 5)
+        )
+        
+        do {
+            let search = MKLocalSearch(request: request)
+            let response = try await search.start()
+            searchResults = response.mapItems
+            showSearchResults = true
+        } catch {
+            searchResults = []
+        }
+        
+        isSearching = false
+    }
+    
+    /// 選擇搜尋結果
+    private func selectSearchResult(_ item: MKMapItem) {
+        let coordinate = item.placemark.coordinate
+        
+        withAnimation(.spring(duration: 0.3)) {
+            selectedCoordinate = coordinate
+            hasPinPlaced = true
+            
+            cameraPosition = .region(MKCoordinateRegion(
+                center: coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
+            ))
+        }
+        
+        // 如果名稱為空，自動填入地點名稱
+        if name.isEmpty, let placeName = item.name {
+            name = placeName
+        }
+        
+        // 收起搜尋結果
+        showSearchResults = false
+        searchText = item.name ?? ""
+    }
+    
     // MARK: - 名稱輸入
     private var nameSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -399,7 +681,6 @@ struct AddGeofenceSheet: View {
                 .foregroundStyle(AppTheme.purple)
             
             HStack(spacing: 8) {
-                // 快速選擇常用名稱
                 ForEach(["家", "公司", "學校"], id: \.self) { preset in
                     Button {
                         name = preset
@@ -488,7 +769,6 @@ struct AddGeofenceSheet: View {
                 }
             }
             
-            // 說明文字
             HStack(spacing: 6) {
                 Image(systemName: "info.circle")
                     .font(.caption)
@@ -501,7 +781,6 @@ struct AddGeofenceSheet: View {
         .cardStyle()
     }
     
-    /// 通知說明文字
     private var notifyDescription: String {
         switch selectedNotifyType {
         case .both: return "對方進入或離開此區域時都會通知你"
@@ -513,11 +792,16 @@ struct AddGeofenceSheet: View {
     // MARK: - 儲存按鈕
     private var saveButton: some View {
         Button {
-            saveGeofence()
+            Task { await saveGeofence() }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                Text("儲存圍欄")
+                if isSaving {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                Text(isSaving ? "儲存中..." : "儲存圍欄")
             }
         }
         .buttonStyle(PrimaryButtonStyle())
@@ -526,25 +810,48 @@ struct AddGeofenceSheet: View {
     }
     
     // MARK: - 儲存
-    private func saveGeofence() {
+    private func saveGeofence() async {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
+        guard !trimmedName.isEmpty, let coord = selectedCoordinate else { return }
+        
+        isSaving = true
+        saveError = nil
         
         let newZone = GeofenceZone.create(
             name: trimmedName,
-            latitude: selectedCoordinate.latitude,
-            longitude: selectedCoordinate.longitude,
+            latitude: coord.latitude,
+            longitude: coord.longitude,
             radius: radius,
             notifyOnEntry: notifyOnEntry,
             notifyOnExit: notifyOnExit
         )
         
-        // TODO: 呼叫 GeofenceManager 新增到 Firestore
-        withAnimation {
-            zones.append(newZone)
+        do {
+            let created = try await apiService.createGeofence(newZone)
+            withAnimation {
+                zones.append(created)
+            }
+            dismiss()
+        } catch {
+            saveError = "儲存失敗：\(error.localizedDescription)"
         }
         
-        dismiss()
+        isSaving = false
+    }
+}
+
+// MARK: - MKPlacemark 地址格式化
+
+extension CLPlacemark {
+    /// 格式化地址字串
+    var formattedAddress: String? {
+        var components: [String] = []
+        if let country = country { components.append(country) }
+        if let city = locality { components.append(city) }
+        if let district = subLocality { components.append(district) }
+        if let street = thoroughfare { components.append(street) }
+        if let number = subThoroughfare { components.append(number) }
+        return components.isEmpty ? nil : components.joined(separator: " ")
     }
 }
 
@@ -553,16 +860,21 @@ struct AddGeofenceSheet: View {
 #Preview("圍欄管理") {
     NavigationStack {
         GeofenceSetupView()
+            .environment(APIService())
+            .environment(LocationManager())
     }
 }
 
 #Preview("新增圍欄 Sheet") {
-    AddGeofenceSheet(zones: .constant([]))
+    AddGeofenceSheet(zones: .constant([]), apiService: APIService())
+        .environment(LocationManager())
 }
 
 #Preview("深色模式") {
     NavigationStack {
         GeofenceSetupView()
+            .environment(APIService())
+            .environment(LocationManager())
     }
     .preferredColorScheme(.dark)
 }

@@ -4,6 +4,7 @@
 // 登入後的主畫面 — 底部 TabView
 // 4 個 Tab：地圖、歷史、聊天、設定
 // 使用 AppTheme 的粉色作為 tab bar 強調色
+// 監聽對方螢幕狀態事件並發送本地通知
 
 import SwiftUI
 
@@ -14,6 +15,9 @@ struct MainTabView: View {
     @State private var selectedTab: Tab = .map
     
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(WebSocketManager.self) private var webSocketManager
+    @Environment(NotificationService.self) private var notificationService
+    @Environment(APIService.self) private var apiService
     
     // MARK: - Tab 定義
     
@@ -76,6 +80,24 @@ struct MainTabView: View {
             .tag(Tab.settings)
         }
         .tint(AppTheme.pink) // Tab bar 強調色使用主題粉色
+        .onChange(of: webSocketManager.partnerScreenEvent) { _, event in
+            // 收到對方螢幕狀態變化 → 發送本地通知
+            guard let event else { return }
+            let partnerName = apiService.partnerUser?.name ?? "對方"
+            notificationService.sendScreenStatusNotification(
+                partnerName: partnerName,
+                screenOn: event.screenOn
+            )
+        }
+        .onChange(of: webSocketManager.sosAlert) { _, isAlert in
+            // 收到 SOS 警報 → 發送本地通知
+            guard isAlert else { return }
+            let partnerName = apiService.partnerUser?.name ?? "對方"
+            notificationService.sendSOSNotification(
+                senderName: partnerName,
+                location: webSocketManager.sosLocation
+            )
+        }
     }
 }
 
@@ -83,9 +105,15 @@ struct MainTabView: View {
 
 #Preview("主畫面") {
     MainTabView()
+        .environment(WebSocketManager())
+        .environment(NotificationService())
+        .environment(APIService())
 }
 
 #Preview("深色模式") {
     MainTabView()
+        .environment(WebSocketManager())
+        .environment(NotificationService())
+        .environment(APIService())
         .preferredColorScheme(.dark)
 }

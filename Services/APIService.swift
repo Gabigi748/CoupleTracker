@@ -251,11 +251,12 @@ final class APIService {
     /// - Parameter page: 頁碼（分頁）
     /// - Returns: 聊天訊息陣列
     func getChatHistory(page: Int = 1) async throws -> [ChatMessage] {
-        let messages: [ChatMessage] = try await request(
+        // 後端回傳格式：{ messages: [...], has_more: bool }
+        let response: ChatHistoryResponse = try await request(
             method: "GET",
-            path: "/api/chat/history?page=\(page)"
+            path: "/api/chat/history?limit=50"
         )
-        return messages
+        return response.messages
     }
     
     // MARK: - SOS API
@@ -294,13 +295,13 @@ final class APIService {
     /// - Returns: 新增後的圍欄（含伺服器生成的 ID）
     @discardableResult
     func createGeofence(_ zone: GeofenceZone) async throws -> GeofenceZone {
+        // 後端期望：name, lat, lng, radius, notify_type
         let body: [String: Any] = [
             "name": zone.name,
-            "latitude": zone.latitude,
-            "longitude": zone.longitude,
+            "lat": zone.latitude,
+            "lng": zone.longitude,
             "radius": zone.radius,
-            "notify_on_entry": zone.notifyOnEntry,
-            "notify_on_exit": zone.notifyOnExit
+            "notify_type": zone.notifyType
         ]
         
         let created: GeofenceZone = try await request(
@@ -314,14 +315,17 @@ final class APIService {
     /// 更新圍欄
     /// - Parameter zone: 更新後的圍欄
     func updateGeofence(_ zone: GeofenceZone) async throws {
+        // 後端期望：name, lat, lng, radius, notify_type, is_active
         let body: [String: Any] = [
             "name": zone.name,
+            "lat": zone.latitude,
+            "lng": zone.longitude,
             "radius": zone.radius,
-            "notify_on_entry": zone.notifyOnEntry,
-            "notify_on_exit": zone.notifyOnExit
+            "notify_type": zone.notifyType,
+            "is_active": zone.isActive
         ]
         
-        let _: EmptyResponse = try await request(
+        let _: GeofenceZone = try await request(
             method: "PUT",
             path: "/api/geofences/\(zone.id)",
             body: body
@@ -343,13 +347,12 @@ final class APIService {
     /// - Parameter deviceToken: APNs token 字串
     func uploadAPNsToken(_ deviceToken: String) async throws {
         let body: [String: Any] = [
-            "token": deviceToken,
-            "platform": "ios"
+            "device_token": deviceToken
         ]
         
         let _: EmptyResponse = try await request(
-            method: "POST",
-            path: "/api/notifications/token",
+            method: "PUT",
+            path: "/api/auth/device-token",
             body: body
         )
     }

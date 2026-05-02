@@ -118,6 +118,12 @@ async function handleMessage(userId, data) {
     case 'chat':
       await handleChat(userId, data);
       break;
+    case 'sos':
+      await handleSOS(userId, data);
+      break;
+    case 'screen_status':
+      await handleScreenStatus(userId, data);
+      break;
     case 'ping':
       sendToUser(userId, { type: 'pong', timestamp: Date.now() });
       break;
@@ -225,6 +231,133 @@ async function handleChat(userId, data) {
       text.trim(),
       { type: 'chat', sender_id: userId }
     );
+  }
+}
+
+/**
+ * 處理 SOS 緊急求助（透過 WebSocket）
+ * - 存入 DB
+ * - 轉發給配對對象
+ * - 對方離線時發推播
+ */
+async function handleSOS(userId, data) {
+  const { lat, lng, timestamp } = data;
+
+  try {
+    // 取得用戶和配對對象資訊
+    const [users] = await db.query(
+      `SELECT u.id, u.name, u.email, u.partner_id, p.device_token AS partner_device_token
+       FROM users u
+       LEFT JOIN users p ON u.partner_id = p.id
+       WHERE u.id = ?`,
+      [userId]
+    );
+
+    const user = users[0];
+    if (!user?.partner_id) {
+      sendToUser(userId, { type: 'error', error: '尚未配對，無法發送 SOS' });
+      return;
+    }
+
+    // 存入 SOS 記錄
+    await db.query(
+      'INSERT INTO sos_alerts (sender_id, lat, lng) VALUES (?, ?, ?)',
+      [userId, lat || null, lng || null]
+    );
+
+    const senderName = user.name || user.email;
+
+    // 轉發給配對對象
+    const delivered = sendToUser(user.partner_id, {
+      type: 'sos',
+      sender_id: userId,
+      sender_name: senderName,
+      lat: lat || null,
+      lng: lng || null,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+
+    // 回傳確認給發送者
+    sendToUser(userId, { type: 'sos_ack', timestamp: Date.now() });
+
+    // 對方不在線，發推播
+    if (!delivered) {
+      await sendPush(
+        user.partner_device_token,
+        '🆘 緊急求救！',
+        `${senderName} 發送了 SOS 求救信號！`,
+        { type: 'sos', sender_id: userId, lat: lat || null, lng: lng || null }
+      );
+    }
+  } catch (err) {
+    console.error(`[WS] SOS 處理錯誤 (用戶 ${userId}):`, err.message);
+  }
+}
+
+// 螢幕狀態節流：記錄每個用戶最後一次轉發的螢幕狀態時間
+const lastScreenForward = new Map();
+const SCREEN_FORWARD_INTERVAL = 60 * 1000; // 60 秒
+
+/**
+ * 處理螢幕開關狀態
+ * - 轉發給配對對象
+ * - 一分鐘內同類型事件不重複轉發
+ */
+async function handleScreenStatus(userId, data) {
+  const { screen_on, timestamp } = data;
+
+  if (screen_on == null) return;
+
+  // 節流：同一用戶同一狀態 60 秒內不重複轉發
+  const key = `${userId}_${screen_on ? 'on' : 'off'}`;
+  const now = Date.now();
+  const lastForward = lastScreenForward.get(key) || 0;
+
+  if (now - lastForward < SCREEN_FORWARD_INTERVAL) {
+    return; // 節流中，不轉發
+  }
+  lastScreenForward.set(key, now);
+
+  try {
+    // 取得配對對象
+    const [users] = await db.query(
+      `SELECT u.partner_id, u.name, u.email
+       FROM users u WHERE u.id = ?`,
+      [userId]
+    );
+
+    const partnerId = users[0]?.partner_id;
+    if (!partnerId) return;
+
+    const senderName = users[0].name || users[0].email;
+
+    // 轉發給配對對象
+    const delivered = sendToUser(partnerId, {
+      type: 'screen_status',
+      user_id: userId,
+      sender_name: senderName,
+      screen_on,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+
+    // 對方不在線時，發推播通知
+    if (!delivered) {
+      const title = screen_on ? '📱 螢幕開啟' : '📴 螢幕關閉';
+      const body = screen_on
+        ? `${senderName} 開啟了螢幕`
+        : `${senderName} 關閉了螢幕`;
+
+      const [partner] = await db.query('SELECT device_token FROM users WHERE id = ?', [partnerId]);
+      if (partner[0]?.device_token) {
+        await sendPush(partner[0].device_token, title, body, {
+          type: 'screen_status',
+          sender_id: userId,
+          screen_on,
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[WS] 螢幕狀態處理錯誤 (用戶 ${userId}):`, err.message);
   }
 }
 

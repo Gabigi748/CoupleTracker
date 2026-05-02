@@ -131,6 +131,9 @@ struct CoupleTrackerApp: App {
         
         // 同步電量
         syncBatteryLevel()
+        
+        // 啟動定位更新
+        locationManager.startUpdatingLocation()
     }
     
     /// 處理圍欄事件

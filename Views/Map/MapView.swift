@@ -3,7 +3,7 @@
 //
 // 主地圖頁面（App 最核心的頁面）
 // - SwiftUI Map（MapKit, iOS 17+）
-// - 顯示自己位置（藍色標記）與對方位置（粉色愛心）
+// - 顯示自己位置（藍色標記 + 精度圈）與對方位置（粉色愛心）
 // - 頂部距離資訊、底部對方電量
 // - 地圖樣式切換（標準/衛星）
 // - 一鍵定位到自己/對方
@@ -37,6 +37,11 @@ struct MapView: View {
     // 自己的位置座標
     private var myLocation: CLLocationCoordinate2D? {
         locationManager.currentLocation?.coordinate
+    }
+    
+    // 自己的定位精度（公尺）
+    private var myAccuracy: Double {
+        locationManager.currentAccuracy ?? 0
     }
     
     // 對方的位置座標
@@ -84,6 +89,19 @@ struct MapView: View {
         return formatter.localizedString(for: lastUpdated, relativeTo: .now)
     }
     
+    // 精度文字
+    private var accuracyText: String {
+        guard myAccuracy > 0 else { return "" }
+        return "±\(Int(myAccuracy))m"
+    }
+    
+    // 精度顏色
+    private var accuracyColor: Color {
+        if myAccuracy <= 10 { return .green }
+        if myAccuracy <= 30 { return .orange }
+        return .red
+    }
+    
     // 地圖樣式
     private var mapStyle: MapStyle {
         switch selectedMapStyle {
@@ -119,6 +137,13 @@ struct MapView: View {
     // MARK: - 地圖內容
     private var mapContent: some View {
         Map(position: $cameraPosition) {
+            // 自己的精度圈（半透明藍色圓圈）
+            if let myLoc = myLocation, myAccuracy > 0 {
+                MapCircle(center: myLoc, radius: myAccuracy)
+                    .foregroundStyle(.blue.opacity(0.1))
+                    .stroke(.blue.opacity(0.3), lineWidth: 1)
+            }
+            
             // 自己的位置標記（藍色圓點）
             if let myLoc = myLocation {
                 Annotation("我", coordinate: myLoc) {
@@ -184,9 +209,24 @@ struct MapView: View {
                 Text("距離 \(distanceText)")
                     .font(.headline)
                 
-                Text("更新於\(lastUpdatedText)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text("更新於\(lastUpdatedText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    // 精度指示
+                    if !accuracyText.isEmpty {
+                        Text(accuracyText)
+                            .font(.caption2.bold())
+                            .foregroundStyle(accuracyColor)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule()
+                                    .fill(accuracyColor.opacity(0.15))
+                            )
+                    }
+                }
             }
             
             Spacer()
@@ -244,8 +284,15 @@ struct MapView: View {
                 )
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(partnerName)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(partnerName)
+                        .font(.headline)
+                    
+                    // 在線狀態
+                    Circle()
+                        .fill(webSocketManager.partnerOnline ? .green : .gray)
+                        .frame(width: 8, height: 8)
+                }
                 
                 // 電量顯示
                 if partnerBattery >= 0 {

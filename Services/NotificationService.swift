@@ -170,6 +170,35 @@ final class NotificationService: NSObject {
         notificationCenter.add(request)
     }
     
+    // MARK: - 螢幕狀態通知
+    
+    /// 發送對方螢幕開關通知
+    /// - Parameters:
+    ///   - partnerName: 對方名稱
+    ///   - screenOn: 螢幕是否開啟
+    func sendScreenStatusNotification(partnerName: String, screenOn: Bool) {
+        let content = UNMutableNotificationContent()
+        
+        if screenOn {
+            content.title = "📱 螢幕開啟"
+            content.body = "\(partnerName) 開啟了螢幕"
+        } else {
+            content.title = "📴 螢幕關閉"
+            content.body = "\(partnerName) 關閉了螢幕"
+        }
+        
+        content.sound = .default
+        content.categoryIdentifier = "SCREEN_STATUS"
+        
+        let request = UNNotificationRequest(
+            identifier: "screen_\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        
+        notificationCenter.add(request)
+    }
+    
     // MARK: - 通知分類設定
     
     /// 註冊通知動作分類
@@ -200,7 +229,15 @@ final class NotificationService: NSObject {
             options: .customDismissAction
         )
         
-        notificationCenter.setNotificationCategories([geofenceCategory, sosCategory])
+        // 螢幕狀態分類
+        let screenCategory = UNNotificationCategory(
+            identifier: "SCREEN_STATUS",
+            actions: [],
+            intentIdentifiers: [],
+            options: .customDismissAction
+        )
+        
+        notificationCenter.setNotificationCategories([geofenceCategory, sosCategory, screenCategory])
     }
 }
 

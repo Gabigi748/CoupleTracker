@@ -2,6 +2,7 @@
 // CoupleTracker
 //
 // Core Location 管理器 — 處理定位權限、背景/前景定位、地理圍欄監控
+// 改善：distanceFilter 降至 5m、過濾精度 > 100m 的位置
 
 import Foundation
 import CoreLocation
@@ -17,6 +18,9 @@ final class LocationManager: NSObject {
     
     /// 當前位置
     var currentLocation: Location?
+    
+    /// 當前定位精度（公尺）
+    var currentAccuracy: Double?
     
     /// 授權狀態
     var authorizationStatus: CLAuthorizationStatus = .notDetermined
@@ -41,8 +45,8 @@ final class LocationManager: NSObject {
     /// Core Location 管理器
     private let locationManager = CLLocationManager()
     
-    /// 地理編碼器（用於反向地理編碼）
-    // geocoder 改為在方法內建立，避免 Sendable data race
+    /// 精度過濾閾值（公尺）— 超過此值的位置更新會被丟棄
+    private let maxAcceptableAccuracy: CLLocationDistance = 100
     
     // MARK: - 初始化
     
@@ -54,8 +58,10 @@ final class LocationManager: NSObject {
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.showsBackgroundLocationIndicator = true
-        // 設定距離過濾器（減少不必要的更新）
-        locationManager.distanceFilter = 10 // 移動 10 公尺才觸發更新
+        // 距離過濾器：移動 5 公尺就觸發更新（從 10m 降低以提高精度）
+        locationManager.distanceFilter = 5
+        // 啟用活動類型提示，讓系統更好地優化定位
+        locationManager.activityType = .other
         
         authorizationStatus = locationManager.authorizationStatus
     }
@@ -78,7 +84,7 @@ final class LocationManager: NSObject {
     /// 開始前景精確定位
     func startUpdatingLocation() {
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager.distanceFilter = 10
+        locationManager.distanceFilter = 5
         locationManager.startUpdatingLocation()
         isUpdatingLocation = true
     }
@@ -202,8 +208,19 @@ extension LocationManager: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let clLocation = locations.last else { return }
         
+        let accuracy = clLocation.horizontalAccuracy
         let location = Location.from(clLocation: clLocation)
+        
         Task { @MainActor in
+            // 更新精度顯示（即使精度差也要顯示）
+            currentAccuracy = accuracy
+            
+            // 過濾精度太差的位置（> 100m 或負值表示無效）
+            guard accuracy >= 0 && accuracy <= maxAcceptableAccuracy else {
+                print("⚠️ 位置精度太差（\(Int(accuracy))m），已忽略")
+                return
+            }
+            
             currentLocation = location
             onLocationUpdate?(location)
         }

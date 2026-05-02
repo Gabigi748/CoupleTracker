@@ -1,7 +1,7 @@
 // WebSocketManager.swift
 // CoupleTracker
 //
-// WebSocket 管理器 — 即時通訊（位置更新、聊天訊息、SOS 警報）
+// WebSocket 管理器 — 即時通訊（位置更新、聊天訊息、SOS 警報、螢幕狀態）
 // 使用 URLSessionWebSocketTask + 自動重連 + 心跳機制
 
 import Foundation
@@ -17,7 +17,7 @@ enum WebSocketConnectionState: Sendable {
 }
 
 /// WebSocket 管理器
-/// 負責即時通訊：位置更新、聊天訊息、SOS 警報
+/// 負責即時通訊：位置更新、聊天訊息、SOS 警報、螢幕狀態
 @MainActor
 @Observable
 final class WebSocketManager {
@@ -44,6 +44,12 @@ final class WebSocketManager {
     
     /// 對方電量
     var partnerBattery: Int?
+    
+    /// 對方是否在線
+    var partnerOnline: Bool = false
+    
+    /// 對方螢幕狀態事件（供 NotificationService 使用）
+    var partnerScreenEvent: ScreenEvent?
     
     // MARK: - 私有屬性
     
@@ -74,6 +80,15 @@ final class WebSocketManager {
     /// URLSession 實例
     private let session: URLSession
     
+    /// 螢幕狀態節流：上次發送螢幕開啟的時間
+    private var lastScreenOnSent: Date?
+    
+    /// 螢幕狀態節流：上次發送螢幕關閉的時間
+    private var lastScreenOffSent: Date?
+    
+    /// 螢幕狀態節流間隔（60 秒）
+    private let screenThrottleInterval: TimeInterval = 60
+    
     // MARK: - 初始化
     
     init() {
@@ -92,11 +107,13 @@ final class WebSocketManager {
         reconnectAttempts = 0
         
         establishConnection()
+        startScreenMonitoring()
     }
     
     /// 主動斷開 WebSocket 連線
     func disconnect() {
         isManualDisconnect = true
+        stopScreenMonitoring()
         cleanup()
         connectionState = .disconnected
     }
@@ -104,17 +121,18 @@ final class WebSocketManager {
     /// 發送位置更新
     /// - Parameter location: 當前位置
     func sendLocation(_ location: Location) {
+        // 後端期望格式：{"type":"location","lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...}
+        let battery = UIDevice.current.batteryLevel >= 0
+            ? Int(UIDevice.current.batteryLevel * 100)
+            : -1
+        
         let payload: [String: Any] = [
-            "type": "location_update",
-            "data": [
-                "latitude": location.latitude,
-                "longitude": location.longitude,
-                "accuracy": 10.0,
-                "battery": UIDevice.current.batteryLevel >= 0
-                    ? Int(UIDevice.current.batteryLevel * 100)
-                    : -1,
-                "timestamp": ISO8601DateFormatter().string(from: location.timestamp)
-            ]
+            "type": "location",
+            "lat": location.latitude,
+            "lng": location.longitude,
+            "accuracy": location.accuracy ?? 10.0,
+            "battery": battery,
+            "timestamp": ISO8601DateFormatter().string(from: location.timestamp)
         ]
         
         sendJSON(payload)
@@ -123,12 +141,10 @@ final class WebSocketManager {
     /// 發送聊天訊息
     /// - Parameter text: 訊息文字
     func sendChat(_ text: String) {
+        // 後端期望格式：{"type":"chat","text":...}
         let payload: [String: Any] = [
-            "type": "chat_message",
-            "data": [
-                "text": text,
-                "timestamp": ISO8601DateFormatter().string(from: Date())
-            ]
+            "type": "chat",
+            "text": text
         ]
         
         sendJSON(payload)
@@ -139,16 +155,85 @@ final class WebSocketManager {
     ///   - latitude: 緯度
     ///   - longitude: 經度
     func sendSOS(latitude: Double, longitude: Double) {
+        // 後端 SOS 路由期望 REST API，但也可以透過 WebSocket 發送
+        // 後端 websocket handler 有 sos type
         let payload: [String: Any] = [
             "type": "sos",
-            "data": [
-                "latitude": latitude,
-                "longitude": longitude,
-                "timestamp": ISO8601DateFormatter().string(from: Date())
-            ]
+            "lat": latitude,
+            "lng": longitude,
+            "timestamp": ISO8601DateFormatter().string(from: Date())
         ]
         
         sendJSON(payload)
+    }
+    
+    /// 發送螢幕狀態
+    /// - Parameter isOn: 螢幕是否開啟
+    func sendScreenStatus(isOn: Bool) {
+        // 節流：一分鐘內同類型事件不重複發送
+        let now = Date()
+        
+        if isOn {
+            if let last = lastScreenOnSent, now.timeIntervalSince(last) < screenThrottleInterval {
+                return
+            }
+            lastScreenOnSent = now
+        } else {
+            if let last = lastScreenOffSent, now.timeIntervalSince(last) < screenThrottleInterval {
+                return
+            }
+            lastScreenOffSent = now
+        }
+        
+        let payload: [String: Any] = [
+            "type": "screen_status",
+            "screen_on": isOn,
+            "timestamp": ISO8601DateFormatter().string(from: now)
+        ]
+        
+        sendJSON(payload)
+    }
+    
+    // MARK: - 螢幕監聽
+    
+    /// 開始監聽螢幕開關
+    private func startScreenMonitoring() {
+        // 啟用電池監控
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sendScreenStatus(isOn: true)
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sendScreenStatus(isOn: false)
+            }
+        }
+    }
+    
+    /// 停止監聽螢幕開關
+    private func stopScreenMonitoring() {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
     }
     
     // MARK: - 私有方法
@@ -214,32 +299,54 @@ final class WebSocketManager {
     }
     
     /// 解析 JSON 訊息
+    /// 後端發送的格式是頂層 JSON（不包在 data 裡）
     private func parseJSON(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String,
-              let payload = json["data"] as? [String: Any] else {
+              let type = json["type"] as? String else {
             return
         }
         
         switch type {
-        case "location_update":
-            handleLocationUpdate(payload)
+        case "connected":
+            // 連線成功確認
+            print("✅ WebSocket 連線成功")
             
-        case "chat_message":
-            handleChatMessage(payload)
+        case "location":
+            // 後端轉發格式：{"type":"location","user_id":...,"lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...}
+            handleLocationUpdate(json)
+            
+        case "chat":
+            // 後端轉發格式：{"type":"chat","id":...,"sender_id":...,"text":...,"timestamp":...}
+            handleChatMessage(json)
+            
+        case "chat_ack":
+            // 聊天訊息確認（自己發送的回執）
+            // 可以用來更新訊息狀態，目前忽略
+            break
             
         case "sos":
-            handleSOSAlert(payload)
+            // 後端轉發格式：{"type":"sos","sender_id":...,"sender_name":...,"lat":...,"lng":...,"timestamp":...}
+            handleSOSAlert(json)
             
-        case "partner_battery":
-            if let battery = payload["battery_level"] as? Int {
-                partnerBattery = battery
+        case "partner_status":
+            // 對方上線/離線：{"type":"partner_status","user_id":...,"online":...,"timestamp":...}
+            if let online = json["online"] as? Bool {
+                partnerOnline = online
             }
+            
+        case "screen_status":
+            // 對方螢幕狀態：{"type":"screen_status","user_id":...,"screen_on":...,"timestamp":...}
+            handleScreenStatus(json)
             
         case "pong":
             // 心跳回應，連線正常
             break
+            
+        case "error":
+            if let error = json["error"] as? String {
+                print("⚠️ WebSocket 錯誤：\(error)")
+            }
             
         default:
             print("⚠️ 未知的 WebSocket 訊息類型：\(type)")
@@ -247,41 +354,63 @@ final class WebSocketManager {
     }
     
     /// 處理對方位置更新
-    private func handleLocationUpdate(_ data: [String: Any]) {
-        guard let latitude = data["latitude"] as? Double,
-              let longitude = data["longitude"] as? Double else {
+    /// 後端格式：{"type":"location","user_id":...,"lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...}
+    private func handleLocationUpdate(_ json: [String: Any]) {
+        guard let lat = json["lat"] as? Double,
+              let lng = json["lng"] as? Double else {
             return
         }
         
         let timestamp: Date
-        if let timestampStr = data["timestamp"] as? String {
+        if let timestampStr = json["timestamp"] as? String {
             timestamp = ISO8601DateFormatter().date(from: timestampStr) ?? Date()
+        } else if let timestampMs = json["timestamp"] as? Double {
+            timestamp = Date(timeIntervalSince1970: timestampMs / 1000)
         } else {
             timestamp = Date()
         }
         
         partnerLocation = Location(
-            latitude: latitude,
-            longitude: longitude,
+            latitude: lat,
+            longitude: lng,
             timestamp: timestamp
         )
         
         // 更新對方電量
-        if let battery = data["battery"] as? Int, battery >= 0 {
+        if let battery = json["battery"] as? Int, battery >= 0 {
             partnerBattery = battery
         }
     }
     
     /// 處理聊天訊息
-    private func handleChatMessage(_ data: [String: Any]) {
-        guard let id = data["id"] as? String,
-              let senderId = data["sender_id"] as? String,
-              let text = data["text"] as? String else {
+    /// 後端格式：{"type":"chat","id":...,"sender_id":...,"text":...,"timestamp":...}
+    private func handleChatMessage(_ json: [String: Any]) {
+        guard let text = json["text"] as? String else {
             return
         }
         
+        // id 可能是 Int 或 String
+        let id: String
+        if let intId = json["id"] as? Int {
+            id = String(intId)
+        } else if let strId = json["id"] as? String {
+            id = strId
+        } else {
+            id = UUID().uuidString
+        }
+        
+        // sender_id 可能是 Int 或 String
+        let senderId: String
+        if let intSender = json["sender_id"] as? Int {
+            senderId = String(intSender)
+        } else if let strSender = json["sender_id"] as? String {
+            senderId = strSender
+        } else {
+            senderId = ""
+        }
+        
         let timestamp: Date
-        if let timestampStr = data["timestamp"] as? String {
+        if let timestampStr = json["timestamp"] as? String {
             timestamp = ISO8601DateFormatter().date(from: timestampStr) ?? Date()
         } else {
             timestamp = Date()
@@ -301,17 +430,33 @@ final class WebSocketManager {
     }
     
     /// 處理 SOS 警報
-    private func handleSOSAlert(_ data: [String: Any]) {
+    /// 後端格式：{"type":"sos","sender_id":...,"sender_name":...,"lat":...,"lng":...,"timestamp":...}
+    private func handleSOSAlert(_ json: [String: Any]) {
         sosAlert = true
         
-        if let latitude = data["latitude"] as? Double,
-           let longitude = data["longitude"] as? Double {
+        if let lat = json["lat"] as? Double,
+           let lng = json["lng"] as? Double {
             sosLocation = Location(
-                latitude: latitude,
-                longitude: longitude,
+                latitude: lat,
+                longitude: lng,
                 timestamp: Date()
             )
         }
+    }
+    
+    /// 處理對方螢幕狀態
+    /// 後端格式：{"type":"screen_status","user_id":...,"screen_on":...,"timestamp":...}
+    private func handleScreenStatus(_ json: [String: Any]) {
+        guard let screenOn = json["screen_on"] as? Bool else { return }
+        
+        let timestamp: Date
+        if let timestampStr = json["timestamp"] as? String {
+            timestamp = ISO8601DateFormatter().date(from: timestampStr) ?? Date()
+        } else {
+            timestamp = Date()
+        }
+        
+        partnerScreenEvent = ScreenEvent(screenOn: screenOn, timestamp: timestamp)
     }
     
     /// 發送 JSON 訊息
@@ -332,11 +477,11 @@ final class WebSocketManager {
     
     // MARK: - 心跳機制
     
-    /// 啟動心跳（每 30 秒 ping 一次）
+    /// 啟動心跳（每 25 秒 ping 一次）
     private func startHeartbeat() {
         stopHeartbeat()
         
-        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.sendPing()
             }
@@ -406,4 +551,12 @@ final class WebSocketManager {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
     }
+}
+
+// MARK: - 螢幕事件模型
+
+/// 螢幕開關事件
+struct ScreenEvent: Equatable, Sendable {
+    let screenOn: Bool
+    let timestamp: Date
 }
