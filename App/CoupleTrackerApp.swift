@@ -79,6 +79,9 @@ struct CoupleTrackerApp: App {
     
     // MARK: - Body
     
+    /// 場景階段（前景/背景/非活躍）
+    @Environment(\.scenePhase) private var scenePhase
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -90,6 +93,37 @@ struct CoupleTrackerApp: App {
                 .onAppear {
                     setupServices()
                 }
+                .onChange(of: scenePhase) { _, newPhase in
+                    handleScenePhaseChange(newPhase)
+                }
+        }
+    }
+    
+    // MARK: - 場景階段處理
+    
+    /// 處理 App 前景/背景切換
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            // 回到前景：恢復高精度定位 + 確保 WebSocket 連線
+            locationManager.setForegroundAccuracy()
+            locationManager.startUpdatingLocation()
+            
+            if apiService.isAuthenticated, let token = apiService.currentToken {
+                webSocketManager.connect(token: token)
+            }
+            
+        case .background:
+            // 進入背景：降低定位精度省電，但保持更新
+            locationManager.setBackgroundAccuracy()
+            // 同時啟動 significant location changes 作為備援
+            locationManager.startSignificantLocationMonitoring()
+            
+        case .inactive:
+            break
+            
+        @unknown default:
+            break
         }
     }
     

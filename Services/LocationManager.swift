@@ -95,6 +95,18 @@ final class LocationManager: NSObject {
         isUpdatingLocation = false
     }
     
+    /// 切換到前景高精度模式
+    func setForegroundAccuracy() {
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.distanceFilter = 5
+    }
+    
+    /// 切換到背景省電模式（降低精度但保持更新）
+    func setBackgroundAccuracy() {
+        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        locationManager.distanceFilter = 20
+    }
+    
     /// 開始背景定位（使用 significant location changes 省電）
     /// 只在位置有顯著變化時才會喚醒 App（通常 500m+）
     func startSignificantLocationMonitoring() {
@@ -211,6 +223,12 @@ extension LocationManager: CLLocationManagerDelegate {
         let accuracy = clLocation.horizontalAccuracy
         let location = Location.from(clLocation: clLocation)
         
+        // 背景任務保護：確保位置更新能完成發送（即使 App 在背景）
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask {
+            UIApplication.shared.endBackgroundTask(bgTask)
+        }
+        
         Task { @MainActor in
             // 更新精度顯示（即使精度差也要顯示）
             currentAccuracy = accuracy
@@ -218,11 +236,17 @@ extension LocationManager: CLLocationManagerDelegate {
             // 過濾精度太差的位置（> 100m 或負值表示無效）
             guard accuracy >= 0 && accuracy <= maxAcceptableAccuracy else {
                 print("⚠️ 位置精度太差（\(Int(accuracy))m），已忽略")
+                UIApplication.shared.endBackgroundTask(bgTask)
                 return
             }
             
             currentLocation = location
             onLocationUpdate?(location)
+            
+            // 給 WebSocket 發送一點時間，然後結束背景任務
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                UIApplication.shared.endBackgroundTask(bgTask)
+            }
         }
     }
     
