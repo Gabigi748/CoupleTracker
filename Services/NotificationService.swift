@@ -29,7 +29,7 @@ final class NotificationService: NSObject {
     // MARK: - 私有屬性
     
     /// 通知中心
-    private let notificationCenter = UNUserNotificationCenter.current()
+    private nonisolated(unsafe) let notificationCenter = UNUserNotificationCenter.current()
     
     /// API 服務參考（用於上傳 Token）
     private weak var apiService: APIService?
