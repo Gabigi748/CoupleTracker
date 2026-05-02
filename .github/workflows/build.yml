@@ -23,7 +23,10 @@ jobs:
 
       - name: Install iOS platform
         run: |
-          xcodebuild -downloadPlatform iOS || echo "iOS platform download failed, continuing with archive only"
+          # Try to install iOS runtime; if it fails, list what's available
+          xcodebuild -downloadPlatform iOS 2>&1 || true
+          # List available runtimes
+          xcrun simctl list runtimes 2>/dev/null || true
 
       - name: Generate Xcode project
         run: |
@@ -104,7 +107,8 @@ jobs:
             -archivePath build/CoupleTracker.xcarchive \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            ENABLE_PREVIEWS=NO
 
       - name: Verify IPA Info.plist
         if: always()
