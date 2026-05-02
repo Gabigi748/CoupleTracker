@@ -58,6 +58,7 @@ jobs:
                 - path: Models
                 - path: Services
                 - path: Views
+                - path: Utils
               info:
                 path: App/Info.plist
                 properties:
@@ -74,6 +75,7 @@ jobs:
                     NSAllowsArbitraryLoads: true
                   UIBackgroundModes:
                     - location
+                    - fetch
                     - remote-notification
               settings:
                 base:
