@@ -42,7 +42,7 @@ final class LocationManager: NSObject {
     private let locationManager = CLLocationManager()
     
     /// 地理編碼器（用於反向地理編碼）
-    private let geocoder = CLGeocoder()
+    // geocoder 改為在方法內建立，避免 Sendable data race
     
     // MARK: - 初始化
     
@@ -153,6 +153,7 @@ final class LocationManager: NSObject {
     /// - Returns: 地址字串
     func reverseGeocode(location: CLLocation) async -> String? {
         do {
+            let geocoder = CLGeocoder()
             let placemarks = try await geocoder.reverseGeocodeLocation(location)
             guard let placemark = placemarks.first else { return nil }
             

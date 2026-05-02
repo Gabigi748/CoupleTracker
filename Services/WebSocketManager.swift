@@ -5,6 +5,7 @@
 // 使用 URLSessionWebSocketTask + 自動重連 + 心跳機制
 
 import Foundation
+import UIKit
 import Observation
 
 /// WebSocket 連線狀態

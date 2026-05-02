@@ -57,8 +57,11 @@ final class NotificationService: NSObject {
     
     /// 檢查當前通知權限狀態
     func checkAuthorizationStatus() async {
-        let settings = await notificationCenter.notificationSettings()
-        isAuthorized = settings.authorizationStatus == .authorized
+        let isAuth = await {
+            let settings = await notificationCenter.notificationSettings()
+            return settings.authorizationStatus == .authorized
+        }()
+        isAuthorized = isAuth
     }
     
     // MARK: - APNs Token 處理

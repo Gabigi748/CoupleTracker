@@ -7,7 +7,7 @@ import Foundation
 
 /// 聊天訊息模型
 /// 對應 Firestore 中 `chats/{chatId}/messages/{id}` 文件
-struct ChatMessage: Codable, Identifiable, Sendable {
+struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     /// 訊息唯一識別碼
     let id: String
     
