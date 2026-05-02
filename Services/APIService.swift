@@ -420,11 +420,15 @@ final class APIService {
         
         switch httpResponse.statusCode {
         case 200...299:
-            // 成功
+            // 成功 — 解析 API 包裝格式 {"success":true,"data":{...}}
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return try decoder.decode(T.self, from: data)
+            let wrapper = try decoder.decode(APIResponse<T>.self, from: data)
+            guard let result = wrapper.data else {
+                throw CoupleTrackerError.serverError(wrapper.error ?? "回應資料為空")
+            }
+            return result
             
         case 401:
             // Token 過期或無效
@@ -507,6 +511,13 @@ final class APIService {
 }
 
 // MARK: - API 回應模型
+
+/// 通用 API 回應包裝
+struct APIResponse<T: Decodable>: Decodable {
+    let success: Bool
+    let data: T?
+    let error: String?
+}
 
 /// 認證回應
 struct AuthResponse: Codable {

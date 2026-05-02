@@ -57,9 +57,9 @@ router.post('/register', async (req, res) => {
       data: {
         token,
         user: {
-          id: result.insertId,
+          uid: String(result.insertId),
           email,
-          name: name || null,
+          name: name || '',
         },
       },
     });
@@ -105,10 +105,10 @@ router.post('/login', async (req, res) => {
       data: {
         token,
         user: {
-          id: user.id,
+          uid: String(user.id),
           email: user.email,
-          name: user.name,
-          partner_id: user.partner_id,
+          name: user.name || '',
+          partner_uid: user.partner_id ? String(user.partner_id) : null,
         },
       },
     });
@@ -133,7 +133,13 @@ router.get('/me', auth, async (req, res) => {
       return res.status(404).json({ success: false, error: '用戶不存在' });
     }
 
-    res.json({ success: true, data: users[0] });
+    const u = users[0];
+    res.json({ success: true, data: {
+      uid: String(u.id),
+      email: u.email,
+      name: u.name || '',
+      partner_uid: u.partner_id ? String(u.partner_id) : null,
+    } });
   } catch (err) {
     console.error('[Auth] 取得用戶錯誤:', err);
     res.status(500).json({ success: false, error: '伺服器錯誤' });
