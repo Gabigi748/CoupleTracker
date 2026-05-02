@@ -1,26 +1,12 @@
 // SettingsView.swift
 // CoupleTracker
 //
-// 設定頁面
-// - 個人資料區塊（頭像、名字、email）
-// - 配對狀態（顯示對方名字，或「未配對」）
-// - 功能列表：圍欄管理、定位精度、通知設定
-// - 解除配對 / 登出（帶確認 alert）
-// - 底部 App 版本
+// 設定頁面 — 使用真實 API 資料
 
 import SwiftUI
 
 struct SettingsView: View {
-    // MARK: - 假資料狀態
-    
-    /// 用戶名稱
-    @State private var userName = "小魚"
-    
-    /// 用戶 Email
-    @State private var userEmail = "fish@example.com"
-    
-    /// 配對對象名稱（nil 表示未配對）
-    @State private var partnerName: String? = "寶貝"
+    @Environment(APIService.self) private var apiService
     
     /// 高精度定位模式
     @State private var isHighAccuracy = true
@@ -37,32 +23,39 @@ struct SettingsView: View {
     /// 顯示登出確認
     @State private var showLogoutAlert = false
     
+    /// 編輯名稱
+    @State private var isEditingName = false
+    @State private var editedName = ""
+    
+    /// 錯誤訊息
+    @State private var errorMessage: String?
+    
     @Environment(\.colorScheme) private var colorScheme
+    
+    private var userName: String {
+        apiService.currentUser?.name ?? "未設定"
+    }
+    
+    private var userEmail: String {
+        apiService.currentUser?.email ?? ""
+    }
+    
+    private var partnerName: String? {
+        apiService.partnerUser?.name
+    }
     
     var body: some View {
         List {
-            // 個人資料區塊
             profileSection
-            
-            // 配對狀態
             pairingSection
-            
-            // 功能設定
             featureSection
-            
-            // 通知設定
             notificationSection
-            
-            // 帳號操作
             accountSection
-            
-            // App 版本
             versionSection
         }
         .listStyle(.insetGrouped)
         .navigationTitle("設定")
         .navigationBarTitleDisplayMode(.large)
-        // 解除配對確認 Alert
         .alert("解除配對", isPresented: $showUnpairAlert) {
             Button("取消", role: .cancel) {}
             Button("確認解除", role: .destructive) {
@@ -71,14 +64,30 @@ struct SettingsView: View {
         } message: {
             Text("解除配對後，將無法看到對方的位置。確定要解除嗎？")
         }
-        // 登出確認 Alert
         .alert("登出", isPresented: $showLogoutAlert) {
             Button("取消", role: .cancel) {}
             Button("確認登出", role: .destructive) {
-                logout()
+                apiService.logout()
             }
         } message: {
             Text("登出後需要重新登入才能使用。")
+        }
+        .alert("修改名稱", isPresented: $isEditingName) {
+            TextField("輸入新名稱", text: $editedName)
+            Button("取消", role: .cancel) {}
+            Button("確認") {
+                updateName()
+            }
+        } message: {
+            Text("輸入你想顯示的名稱")
+        }
+        .alert("錯誤", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("好的") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
     
@@ -86,7 +95,6 @@ struct SettingsView: View {
     private var profileSection: some View {
         Section {
             HStack(spacing: 16) {
-                // 頭像
                 ZStack {
                     Circle()
                         .fill(AppTheme.softGradient)
@@ -97,7 +105,6 @@ struct SettingsView: View {
                         .foregroundStyle(.white)
                 }
                 
-                // 名字 + Email
                 VStack(alignment: .leading, spacing: 4) {
                     Text(userName)
                         .font(.title3.bold())
@@ -109,10 +116,14 @@ struct SettingsView: View {
                 
                 Spacer()
                 
-                // 編輯按鈕
-                Image(systemName: "pencil.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(AppTheme.pink)
+                Button {
+                    editedName = userName
+                    isEditingName = true
+                } label: {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(AppTheme.pink)
+                }
             }
             .padding(.vertical, 8)
         }
@@ -122,7 +133,6 @@ struct SettingsView: View {
     private var pairingSection: some View {
         Section("配對狀態") {
             HStack(spacing: 12) {
-                // 配對圖示
                 Image(systemName: partnerName != nil ? "heart.fill" : "heart.slash")
                     .font(.title3)
                     .foregroundStyle(partnerName != nil ? AppTheme.pink : .secondary)
@@ -131,7 +141,7 @@ struct SettingsView: View {
                     if let partner = partnerName {
                         Text("已與 \(partner) 配對")
                             .font(.body)
-                        Text("位置共享中 💕")
+                        Text("位置共享中")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -146,7 +156,6 @@ struct SettingsView: View {
                 
                 Spacer()
                 
-                // 配對狀態指示燈
                 Circle()
                     .fill(partnerName != nil ? .green : .gray)
                     .frame(width: 10, height: 10)
@@ -158,7 +167,6 @@ struct SettingsView: View {
     // MARK: - 功能設定
     private var featureSection: some View {
         Section("功能設定") {
-            // 地理圍欄管理
             NavigationLink {
                 GeofenceSetupView()
             } label: {
@@ -170,7 +178,6 @@ struct SettingsView: View {
                 }
             }
             
-            // 定位精度設定
             HStack {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
@@ -180,8 +187,8 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 } icon: {
-                    Image(systemName: isHighAccuracy ? "location.fill" : "location")
-                        .foregroundStyle(isHighAccuracy ? AppTheme.pink : .secondary)
+                    Image(systemName: "location.circle.fill")
+                        .foregroundStyle(AppTheme.blue)
                 }
                 
                 Spacer()
@@ -196,13 +203,12 @@ struct SettingsView: View {
     // MARK: - 通知設定
     private var notificationSection: some View {
         Section("通知設定") {
-            // 圍欄通知
             HStack {
                 Label {
                     Text("圍欄進出通知")
                 } icon: {
                     Image(systemName: "bell.badge.fill")
-                        .foregroundStyle(AppTheme.purple)
+                        .foregroundStyle(AppTheme.orange)
                 }
                 
                 Spacer()
@@ -212,7 +218,6 @@ struct SettingsView: View {
                     .labelsHidden()
             }
             
-            // SOS 通知
             HStack {
                 Label {
                     Text("SOS 緊急通知")
@@ -233,7 +238,6 @@ struct SettingsView: View {
     // MARK: - 帳號操作
     private var accountSection: some View {
         Section {
-            // 解除配對
             if partnerName != nil {
                 Button(role: .destructive) {
                     showUnpairAlert = true
@@ -246,7 +250,6 @@ struct SettingsView: View {
                 }
             }
             
-            // 登出
             Button(role: .destructive) {
                 showLogoutAlert = true
             } label: {
@@ -280,37 +283,25 @@ struct SettingsView: View {
     
     // MARK: - 動作
     
-    /// 解除配對
     private func unpairPartner() {
-        // TODO: 呼叫 APIService 解除配對
-        withAnimation {
-            partnerName = nil
+        Task {
+            do {
+                try await apiService.unpair()
+            } catch {
+                errorMessage = "解除配對失敗：\(error.localizedDescription)"
+            }
         }
     }
     
-    /// 登出
-    private func logout() {
-        // TODO: 呼叫 APIService 登出
+    private func updateName() {
+        let newName = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty else { return }
+        Task {
+            do {
+                try await apiService.updateProfile(name: newName)
+            } catch {
+                errorMessage = "修改名稱失敗：\(error.localizedDescription)"
+            }
+        }
     }
-}
-
-// MARK: - Preview
-
-#Preview("設定頁面") {
-    NavigationStack {
-        SettingsView()
-    }
-}
-
-#Preview("未配對狀態") {
-    NavigationStack {
-        SettingsView()
-    }
-}
-
-#Preview("深色模式") {
-    NavigationStack {
-        SettingsView()
-    }
-    .preferredColorScheme(.dark)
 }

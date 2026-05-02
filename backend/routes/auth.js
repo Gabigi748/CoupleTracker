@@ -147,6 +147,36 @@ router.get('/me', auth, async (req, res) => {
 });
 
 /**
+ * PUT /api/auth/profile
+ * 更新個人資料（名稱）
+ */
+router.put('/profile', auth, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ success: false, error: '名稱不能為空' });
+    }
+
+    await db.query('UPDATE users SET name = ? WHERE id = ?', [name.trim(), req.userId]);
+
+    const [users] = await db.query('SELECT id, email, name FROM users WHERE id = ?', [req.userId]);
+    const u = users[0];
+
+    res.json({
+      success: true,
+      data: {
+        uid: String(u.id),
+        email: u.email,
+        name: u.name || '',
+      },
+    });
+  } catch (err) {
+    console.error('[Auth] 更新個人資料錯誤:', err);
+    res.status(500).json({ success: false, error: '伺服器錯誤' });
+  }
+});
+
+/**
  * PUT /api/auth/device-token
  * 更新裝置推播 Token
  */

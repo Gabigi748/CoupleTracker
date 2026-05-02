@@ -25,34 +25,8 @@ struct LocationHistoryView: View {
     
     @Environment(\.colorScheme) private var colorScheme
     
-    // 假資料：歷史位置點
-    @State private var historyLocations: [HistoryLocation] = [
-        HistoryLocation(
-            time: Calendar.current.date(bySettingHour: 8, minute: 30, second: 0, of: Date()) ?? Date(),
-            coordinate: CLLocationCoordinate2D(latitude: 25.0330, longitude: 121.5654),
-            address: "台北市信義區信義路五段7號"
-        ),
-        HistoryLocation(
-            time: Calendar.current.date(bySettingHour: 10, minute: 15, second: 0, of: Date()) ?? Date(),
-            coordinate: CLLocationCoordinate2D(latitude: 25.0418, longitude: 121.5449),
-            address: "台北市大安區忠孝東路四段"
-        ),
-        HistoryLocation(
-            time: Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date(),
-            coordinate: CLLocationCoordinate2D(latitude: 25.0478, longitude: 121.5170),
-            address: "台北市中正區北平西路3號"
-        ),
-        HistoryLocation(
-            time: Calendar.current.date(bySettingHour: 14, minute: 30, second: 0, of: Date()) ?? Date(),
-            coordinate: CLLocationCoordinate2D(latitude: 25.0375, longitude: 121.5637),
-            address: "台北市信義區松壽路12號"
-        ),
-        HistoryLocation(
-            time: Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: Date()) ?? Date(),
-            coordinate: CLLocationCoordinate2D(latitude: 25.0330, longitude: 121.5654),
-            address: "台北市信義區信義路五段7號"
-        ),
-    ]
+    // 歷史位置點（從 API 載入）
+    @State private var historyLocations: [HistoryLocation] = []
     
     // 軌跡座標（用於 MapPolyline）
     private var routeCoordinates: [CLLocationCoordinate2D] {
@@ -100,7 +74,7 @@ struct LocationHistoryView: View {
             // 切換自己/對方
             Picker("查看對象", selection: $showingPartnerHistory) {
                 Text("我的軌跡").tag(false)
-                Text("寶貝的軌跡").tag(true)
+                Text("對方的軌跡").tag(true)
             }
             .pickerStyle(.segmented)
         }

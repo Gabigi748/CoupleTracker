@@ -154,6 +154,19 @@ final class APIService {
         }
     }
     
+    // MARK: - 個人資料 API
+    
+    /// 更新個人資料（名稱）
+    func updateProfile(name: String) async throws {
+        let body: [String: Any] = ["name": name]
+        let _: AppUser = try await request(
+            method: "PUT",
+            path: "/api/auth/profile",
+            body: body
+        )
+        currentUser?.name = name
+    }
+    
     // MARK: - 配對 API
     
     /// 生成配對碼
