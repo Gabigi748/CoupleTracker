@@ -138,23 +138,13 @@ struct CoupleTrackerApp: App {
     
     /// 處理圍欄事件
     private func handleGeofenceEvent(_ event: GeofenceEvent) {
-        guard let zone = geofenceManager.zone(by: event.regionId),
-              let partnerName = apiService.partnerUser?.name ?? apiService.currentUser?.name else {
+        guard let zone = geofenceManager.zone(by: event.regionId) else {
             return
         }
         
-        switch event.type {
-        case .entry:
-            notificationService.sendGeofenceEntryNotification(
-                zoneName: zone.name,
-                partnerName: partnerName
-            )
-        case .exit:
-            notificationService.sendGeofenceExitNotification(
-                zoneName: zone.name,
-                partnerName: partnerName
-            )
-        }
+        // 透過 WebSocket 發送圍欄事件給後端（後端會轉發給配對對象）
+        let eventType = event.type == .entry ? "entry" : "exit"
+        webSocketManager.sendGeofenceEvent(zoneName: zone.name, event: eventType)
     }
     
     /// 同步裝置電量
@@ -174,6 +164,8 @@ struct CoupleTrackerApp: App {
 /// 主畫面 — 根據登入狀態切換
 struct ContentView: View {
     @Environment(APIService.self) private var apiService
+    @Environment(WebSocketManager.self) private var webSocketManager
+    @Environment(NotificationService.self) private var notificationService
     
     var body: some View {
         Group {
@@ -201,6 +193,28 @@ struct ContentView: View {
             } else {
                 // 未登入 → 登入畫面
                 LoginView()
+            }
+        }
+        .onChange(of: webSocketManager.partnerScreenEvent) { _, event in
+            guard let event else { return }
+            let partnerName = apiService.partnerUser?.name ?? "對方"
+            notificationService.sendScreenStatusNotification(
+                partnerName: partnerName,
+                screenOn: event.screenOn
+            )
+        }
+        .onChange(of: webSocketManager.partnerGeofenceEvent) { _, event in
+            guard let event else { return }
+            if event.event == "entry" {
+                notificationService.sendGeofenceEntryNotification(
+                    zoneName: event.zoneName,
+                    partnerName: event.senderName
+                )
+            } else {
+                notificationService.sendGeofenceExitNotification(
+                    zoneName: event.zoneName,
+                    partnerName: event.senderName
+                )
             }
         }
     }

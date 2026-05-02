@@ -51,6 +51,9 @@ final class WebSocketManager {
     /// 對方螢幕狀態事件（供 NotificationService 使用）
     var partnerScreenEvent: ScreenEvent?
     
+    /// 對方圍欄事件（供 NotificationService 使用）
+    var partnerGeofenceEvent: PartnerGeofenceEvent?
+    
     // MARK: - 私有屬性
     
     /// WebSocket 連線
@@ -187,8 +190,23 @@ final class WebSocketManager {
         
         let payload: [String: Any] = [
             "type": "screen_status",
+            "status": isOn ? "on" : "off",
             "screen_on": isOn,
             "timestamp": ISO8601DateFormatter().string(from: now)
+        ]
+        
+        sendJSON(payload)
+    }
+    
+    /// 發送地理圍欄事件
+    /// - Parameters:
+    ///   - zoneName: 圍欄名稱
+    ///   - event: 事件類型（"entry" 或 "exit"）
+    func sendGeofenceEvent(zoneName: String, event: String) {
+        let payload: [String: Any] = [
+            "type": "geofence_event",
+            "zone_name": zoneName,
+            "event": event
         ]
         
         sendJSON(payload)
@@ -339,6 +357,10 @@ final class WebSocketManager {
             // 對方螢幕狀態：{"type":"screen_status","user_id":...,"screen_on":...,"timestamp":...}
             handleScreenStatus(json)
             
+        case "geofence_event":
+            // 對方圍欄事件：{"type":"geofence_event","user_id":...,"zone_name":...,"event":...,"text":...}
+            handleGeofenceEventReceived(json)
+            
         case "pong":
             // 心跳回應，連線正常
             break
@@ -445,7 +467,7 @@ final class WebSocketManager {
     }
     
     /// 處理對方螢幕狀態
-    /// 後端格式：{"type":"screen_status","user_id":...,"screen_on":...,"timestamp":...}
+    /// 後端格式：{"type":"screen_status","user_id":...,"screen_on":...,"text":...,"timestamp":...}
     private func handleScreenStatus(_ json: [String: Any]) {
         guard let screenOn = json["screen_on"] as? Bool else { return }
         
@@ -457,6 +479,70 @@ final class WebSocketManager {
         }
         
         partnerScreenEvent = ScreenEvent(screenOn: screenOn, timestamp: timestamp)
+        
+        // 如果後端附帶了系統訊息文字，加入聊天列表
+        if let text = json["text"] as? String {
+            let msgId: String
+            if let intId = json["message_id"] as? Int {
+                msgId = String(intId)
+            } else {
+                msgId = UUID().uuidString
+            }
+            
+            let systemMsg = ChatMessage(
+                id: msgId,
+                senderId: "system",
+                text: text,
+                timestamp: timestamp,
+                isRead: false,
+                messageType: .system
+            )
+            newMessage = systemMsg
+            messages.append(systemMsg)
+        }
+    }
+    
+    /// 處理對方圍欄事件
+    /// 後端格式：{"type":"geofence_event","user_id":...,"zone_name":...,"event":...,"text":...,"timestamp":...}
+    private func handleGeofenceEventReceived(_ json: [String: Any]) {
+        let timestamp: Date
+        if let timestampStr = json["timestamp"] as? String {
+            timestamp = ISO8601DateFormatter().date(from: timestampStr) ?? Date()
+        } else {
+            timestamp = Date()
+        }
+        
+        // 加入聊天列表作為系統訊息
+        if let text = json["text"] as? String {
+            let msgId: String
+            if let intId = json["message_id"] as? Int {
+                msgId = String(intId)
+            } else {
+                msgId = UUID().uuidString
+            }
+            
+            let systemMsg = ChatMessage(
+                id: msgId,
+                senderId: "system",
+                text: text,
+                timestamp: timestamp,
+                isRead: false,
+                messageType: .system
+            )
+            newMessage = systemMsg
+            messages.append(systemMsg)
+        }
+        
+        // 觸發圍欄事件通知（供 NotificationService 使用）
+        let zoneName = json["zone_name"] as? String ?? ""
+        let event = json["event"] as? String ?? ""
+        let senderName = json["sender_name"] as? String ?? ""
+        partnerGeofenceEvent = PartnerGeofenceEvent(
+            zoneName: zoneName,
+            event: event,
+            senderName: senderName,
+            timestamp: timestamp
+        )
     }
     
     /// 發送 JSON 訊息
@@ -558,5 +644,13 @@ final class WebSocketManager {
 /// 螢幕開關事件
 struct ScreenEvent: Equatable, Sendable {
     let screenOn: Bool
+    let timestamp: Date
+}
+
+/// 對方圍欄事件
+struct PartnerGeofenceEvent: Equatable, Sendable {
+    let zoneName: String
+    let event: String  // "entry" or "exit"
+    let senderName: String
     let timestamp: Date
 }

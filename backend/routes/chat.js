@@ -30,7 +30,7 @@ router.get('/history', auth, async (req, res) => {
 
     // 查詢雙方的訊息
     let sql = `
-      SELECT id, sender_id, receiver_id, text, created_at
+      SELECT id, sender_id, receiver_id, text, type, created_at
       FROM messages
       WHERE (sender_id = ? AND receiver_id = ?)
          OR (sender_id = ? AND receiver_id = ?)

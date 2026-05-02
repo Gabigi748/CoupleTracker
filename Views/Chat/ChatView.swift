@@ -57,7 +57,8 @@ struct ChatView: View {
                 id: msg.id,
                 text: msg.text,
                 isMe: msg.senderId == myUserId,
-                timestamp: msg.timestamp
+                timestamp: msg.timestamp,
+                messageType: msg.messageType
             )
             withAnimation(.easeOut(duration: 0.2)) {
                 messages.append(bubble)
@@ -74,7 +75,8 @@ struct ChatView: View {
                     id: msg.id,
                     text: msg.text,
                     isMe: msg.senderId == myUserId,
-                    timestamp: msg.timestamp
+                    timestamp: msg.timestamp,
+                    messageType: msg.messageType
                 )
             }
         } catch {
@@ -90,12 +92,18 @@ struct ChatView: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(messages) { message in
-                        MessageBubble(
-                            message: message,
-                            timeFormatter: timeFormatter,
-                            colorScheme: colorScheme
-                        )
-                        .id(message.id)
+                        if message.isSystem {
+                            // 系統訊息：居中、灰色小字
+                            SystemMessageBubble(message: message, timeFormatter: timeFormatter)
+                                .id(message.id)
+                        } else {
+                            MessageBubble(
+                                message: message,
+                                timeFormatter: timeFormatter,
+                                colorScheme: colorScheme
+                            )
+                            .id(message.id)
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -191,12 +199,17 @@ struct ChatBubbleData: Identifiable, Equatable {
     let text: String
     let isMe: Bool           // true = 自己, false = 對方
     let timestamp: Date
+    let messageType: MessageType  // 訊息類型
     
-    init(id: String = UUID().uuidString, text: String, isMe: Bool, timestamp: Date) {
+    /// 是否為系統訊息
+    var isSystem: Bool { messageType == .system }
+    
+    init(id: String = UUID().uuidString, text: String, isMe: Bool, timestamp: Date, messageType: MessageType = .text) {
         self.id = id
         self.text = text
         self.isMe = isMe
         self.timestamp = timestamp
+        self.messageType = messageType
     }
 }
 
@@ -257,6 +270,33 @@ struct MessageBubble: View {
                     )
             }
         }
+    }
+}
+
+// MARK: - 系統訊息元件（居中、灰色小字、不顯示頭像）
+struct SystemMessageBubble: View {
+    let message: ChatBubbleData
+    let timeFormatter: DateFormatter
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(message.text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(Color(.systemGray5).opacity(0.6))
+                )
+            
+            Text(timeFormatter.string(from: message.timestamp))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
     }
 }
 

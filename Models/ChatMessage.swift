@@ -35,6 +35,7 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         case createdAt = "created_at"
         case isRead = "is_read"
         case messageType = "message_type"
+        case type
     }
     
     init(from decoder: Decoder) throws {
@@ -76,7 +77,10 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         // 後端不一定回傳這些欄位，給預設值
         isRead = (try? container.decode(Bool.self, forKey: .isRead)) ?? false
         
+        // 支援 message_type 或 type（後端回傳 type 欄位）
         if let mt = try? container.decode(MessageType.self, forKey: .messageType) {
+            messageType = mt
+        } else if let mt = try? container.decode(MessageType.self, forKey: .type) {
             messageType = mt
         } else {
             messageType = .text

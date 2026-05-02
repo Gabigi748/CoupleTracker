@@ -124,6 +124,9 @@ async function handleMessage(userId, data) {
     case 'screen_status':
       await handleScreenStatus(userId, data);
       break;
+    case 'geofence_event':
+      await handleGeofenceEvent(userId, data);
+      break;
     case 'ping':
       sendToUser(userId, { type: 'pong', timestamp: Date.now() });
       break;
@@ -204,8 +207,8 @@ async function handleChat(userId, data) {
 
   // 存入 DB
   const [result] = await db.query(
-    'INSERT INTO messages (sender_id, receiver_id, text) VALUES (?, ?, ?)',
-    [userId, user.partner_id, text.trim()]
+    'INSERT INTO messages (sender_id, receiver_id, text, type) VALUES (?, ?, ?, ?)',
+    [userId, user.partner_id, text.trim(), 'text']
   );
 
   const message = {
@@ -304,12 +307,20 @@ const SCREEN_FORWARD_INTERVAL = 60 * 1000; // 60 秒
  * - 一分鐘內同類型事件不重複轉發
  */
 async function handleScreenStatus(userId, data) {
-  const { screen_on, timestamp } = data;
+  const { screen_on, status, timestamp } = data;
 
-  if (screen_on == null) return;
+  // 支援兩種格式：screen_on (bool) 或 status ("on"/"off")
+  let isOn;
+  if (status != null) {
+    isOn = status === 'on';
+  } else if (screen_on != null) {
+    isOn = !!screen_on;
+  } else {
+    return;
+  }
 
   // 節流：同一用戶同一狀態 60 秒內不重複轉發
-  const key = `${userId}_${screen_on ? 'on' : 'off'}`;
+  const key = `${userId}_${isOn ? 'on' : 'off'}`;
   const now = Date.now();
   const lastForward = lastScreenForward.get(key) || 0;
 
@@ -321,8 +332,10 @@ async function handleScreenStatus(userId, data) {
   try {
     // 取得配對對象
     const [users] = await db.query(
-      `SELECT u.partner_id, u.name, u.email
-       FROM users u WHERE u.id = ?`,
+      `SELECT u.partner_id, u.name, u.email, p.device_token AS partner_device_token
+       FROM users u
+       LEFT JOIN users p ON u.partner_id = p.id
+       WHERE u.id = ?`,
       [userId]
     );
 
@@ -330,34 +343,108 @@ async function handleScreenStatus(userId, data) {
     if (!partnerId) return;
 
     const senderName = users[0].name || users[0].email;
+    const actionText = isOn ? '開啟了螢幕' : '關閉了螢幕';
+    const systemText = `${senderName} ${actionText}`;
+
+    // 存入 messages 表（type='system'）
+    const [result] = await db.query(
+      'INSERT INTO messages (sender_id, receiver_id, text, type) VALUES (?, ?, ?, ?)',
+      [userId, partnerId, systemText, 'system']
+    );
 
     // 轉發給配對對象
     const delivered = sendToUser(partnerId, {
       type: 'screen_status',
       user_id: userId,
       sender_name: senderName,
-      screen_on,
+      screen_on: isOn,
       timestamp: timestamp || new Date().toISOString(),
+      // 同時附帶聊天訊息格式，讓 App 可以直接顯示在聊天框
+      message_id: result.insertId,
+      text: systemText,
     });
 
     // 對方不在線時，發推播通知
     if (!delivered) {
-      const title = screen_on ? '📱 螢幕開啟' : '📴 螢幕關閉';
-      const body = screen_on
-        ? `${senderName} 開啟了螢幕`
-        : `${senderName} 關閉了螢幕`;
+      const title = isOn ? '📱 螢幕開啟' : '📴 螢幕關閉';
+      const body = systemText;
 
-      const [partner] = await db.query('SELECT device_token FROM users WHERE id = ?', [partnerId]);
-      if (partner[0]?.device_token) {
-        await sendPush(partner[0].device_token, title, body, {
+      if (users[0].partner_device_token) {
+        await sendPush(users[0].partner_device_token, title, body, {
           type: 'screen_status',
           sender_id: userId,
-          screen_on,
+          screen_on: isOn,
         });
       }
     }
   } catch (err) {
     console.error(`[WS] 螢幕狀態處理錯誤 (用戶 ${userId}):`, err.message);
+  }
+}
+
+/**
+ * 處理地理圍欄事件
+ * - 存入 messages 表（type='system'）
+ * - 轉發給配對對象
+ * - 對方離線時發推播
+ */
+async function handleGeofenceEvent(userId, data) {
+  const { zone_name, event } = data;
+
+  if (!zone_name || !event) return;
+
+  try {
+    // 取得配對對象
+    const [users] = await db.query(
+      `SELECT u.partner_id, u.name, u.email, p.device_token AS partner_device_token
+       FROM users u
+       LEFT JOIN users p ON u.partner_id = p.id
+       WHERE u.id = ?`,
+      [userId]
+    );
+
+    const partnerId = users[0]?.partner_id;
+    if (!partnerId) return;
+
+    const senderName = users[0].name || users[0].email;
+    const actionText = event === 'exit' ? '離開了' : '到達了';
+    const systemText = `${senderName} ${actionText} ${zone_name}`;
+
+    // 存入 messages 表（type='system'）
+    const [result] = await db.query(
+      'INSERT INTO messages (sender_id, receiver_id, text, type) VALUES (?, ?, ?, ?)',
+      [userId, partnerId, systemText, 'system']
+    );
+
+    // 轉發給配對對象
+    const delivered = sendToUser(partnerId, {
+      type: 'geofence_event',
+      user_id: userId,
+      sender_name: senderName,
+      zone_name,
+      event,
+      timestamp: new Date().toISOString(),
+      // 附帶聊天訊息格式
+      message_id: result.insertId,
+      text: systemText,
+    });
+
+    // 對方不在線時，發推播通知
+    if (!delivered) {
+      const emoji = event === 'exit' ? '🚶' : '📍';
+      const title = `${emoji} 圍欄通知`;
+
+      if (users[0].partner_device_token) {
+        await sendPush(users[0].partner_device_token, title, systemText, {
+          type: 'geofence_event',
+          sender_id: userId,
+          zone_name,
+          event,
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[WS] 圍欄事件處理錯誤 (用戶 ${userId}):`, err.message);
   }
 }
 
