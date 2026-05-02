@@ -7,6 +7,7 @@
 // - 頂部距離資訊、底部對方電量
 // - 地圖樣式切換（標準/衛星）
 // - 一鍵定位到自己/對方
+// - 透過 WebSocketManager 接收對方即時位置
 
 import SwiftUI
 import MapKit
@@ -28,30 +29,44 @@ struct MapView: View {
     @State private var selectedMapStyle: MapStyleOption = .standard
     @State private var showStylePicker = false
     
-    // 假資料：自己的位置（台北 101 附近）
-    @State private var myLocation = CLLocationCoordinate2D(
-        latitude: 25.0330,
-        longitude: 121.5654
-    )
-    
-    // 假資料：對方的位置（台北車站附近）
-    @State private var partnerLocation = CLLocationCoordinate2D(
-        latitude: 25.0478,
-        longitude: 121.5170
-    )
-    
-    // 假資料：對方資訊
-    @State private var partnerName = "寶貝"
-    @State private var partnerBattery: Int = 72
-    @State private var lastUpdated = Date().addingTimeInterval(-120) // 2 分鐘前
-    
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(LocationManager.self) private var locationManager
+    @Environment(WebSocketManager.self) private var webSocketManager
+    @Environment(APIService.self) private var apiService
+    
+    // 自己的位置座標
+    private var myLocation: CLLocationCoordinate2D? {
+        locationManager.currentLocation?.coordinate
+    }
+    
+    // 對方的位置座標
+    private var partnerLocation: CLLocationCoordinate2D? {
+        webSocketManager.partnerLocation?.coordinate
+    }
+    
+    // 對方名稱
+    private var partnerName: String {
+        apiService.partnerUser?.name ?? "對方"
+    }
+    
+    // 對方電量
+    private var partnerBattery: Int {
+        webSocketManager.partnerBattery ?? apiService.partnerUser?.batteryLevel ?? -1
+    }
+    
+    // 最後更新時間
+    private var lastUpdated: Date? {
+        webSocketManager.partnerLocation?.timestamp
+    }
     
     // 計算距離（公里）
     private var distanceText: String {
-        let myLoc = CLLocation(latitude: myLocation.latitude, longitude: myLocation.longitude)
-        let partnerLoc = CLLocation(latitude: partnerLocation.latitude, longitude: partnerLocation.longitude)
-        let distance = myLoc.distance(from: partnerLoc)
+        guard let myLoc = myLocation, let partnerLoc = partnerLocation else {
+            return "--"
+        }
+        let my = CLLocation(latitude: myLoc.latitude, longitude: myLoc.longitude)
+        let partner = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
+        let distance = my.distance(from: partner)
         
         if distance < 1000 {
             return String(format: "%.0f m", distance)
@@ -62,6 +77,7 @@ struct MapView: View {
     
     // 最後更新時間文字
     private var lastUpdatedText: String {
+        guard let lastUpdated else { return "等待更新..." }
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Locale(identifier: "zh-Hant")
         formatter.unitsStyle = .short
@@ -104,46 +120,50 @@ struct MapView: View {
     private var mapContent: some View {
         Map(position: $cameraPosition) {
             // 自己的位置標記（藍色圓點）
-            Annotation("我", coordinate: myLocation) {
-                ZStack {
-                    Circle()
-                        .fill(.blue.opacity(0.2))
-                        .frame(width: 40, height: 40)
-                    Circle()
-                        .fill(.blue)
-                        .frame(width: 16, height: 16)
-                    Circle()
-                        .stroke(.white, lineWidth: 3)
-                        .frame(width: 16, height: 16)
+            if let myLoc = myLocation {
+                Annotation("我", coordinate: myLoc) {
+                    ZStack {
+                        Circle()
+                            .fill(.blue.opacity(0.2))
+                            .frame(width: 40, height: 40)
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 16, height: 16)
+                        Circle()
+                            .stroke(.white, lineWidth: 3)
+                            .frame(width: 16, height: 16)
+                    }
                 }
             }
             
             // 對方的位置標記（粉色愛心）
-            Annotation(partnerName, coordinate: partnerLocation) {
-                VStack(spacing: 2) {
-                    // 名字標籤
-                    Text(partnerName)
-                        .font(.caption2.bold())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(AppTheme.pink)
-                        )
-                    
-                    // 愛心圖示
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(AppTheme.pink)
-                        .shadow(color: AppTheme.pink.opacity(0.5), radius: 4, y: 2)
-                    
-                    // 三角形指標
-                    Image(systemName: "triangle.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(AppTheme.pink)
-                        .rotationEffect(.degrees(180))
-                        .offset(y: -4)
+            if let partnerLoc = partnerLocation {
+                Annotation(partnerName, coordinate: partnerLoc) {
+                    VStack(spacing: 2) {
+                        // 名字標籤
+                        Text(partnerName)
+                            .font(.caption2.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(AppTheme.pink)
+                            )
+                        
+                        // 愛心圖示
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(AppTheme.pink)
+                            .shadow(color: AppTheme.pink.opacity(0.5), radius: 4, y: 2)
+                        
+                        // 三角形指標
+                        Image(systemName: "triangle.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(AppTheme.pink)
+                            .rotationEffect(.degrees(180))
+                            .offset(y: -4)
+                    }
                 }
             }
         }
@@ -228,11 +248,17 @@ struct MapView: View {
                     .font(.headline)
                 
                 // 電量顯示
-                HStack(spacing: 4) {
-                    batteryIcon
-                    Text("\(partnerBattery)%")
+                if partnerBattery >= 0 {
+                    HStack(spacing: 4) {
+                        batteryIcon
+                        Text("\(partnerBattery)%")
+                            .font(.subheadline)
+                            .foregroundStyle(batteryColor)
+                    }
+                } else {
+                    Text("電量未知")
                         .font(.subheadline)
-                        .foregroundStyle(batteryColor)
+                        .foregroundStyle(.secondary)
                 }
             }
             
@@ -262,43 +288,47 @@ struct MapView: View {
     private var controlButtons: some View {
         VStack(spacing: 12) {
             // 定位到對方
-            Button {
-                withAnimation {
-                    cameraPosition = .region(MKCoordinateRegion(
-                        center: partnerLocation,
-                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                    ))
+            if let partnerLoc = partnerLocation {
+                Button {
+                    withAnimation {
+                        cameraPosition = .region(MKCoordinateRegion(
+                            center: partnerLoc,
+                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                        ))
+                    }
+                } label: {
+                    Image(systemName: "heart.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(AppTheme.pink)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        )
                 }
-            } label: {
-                Image(systemName: "heart.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(AppTheme.pink)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-                    )
             }
             
             // 定位到自己
-            Button {
-                withAnimation {
-                    cameraPosition = .region(MKCoordinateRegion(
-                        center: myLocation,
-                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                    ))
+            if let myLoc = myLocation {
+                Button {
+                    withAnimation {
+                        cameraPosition = .region(MKCoordinateRegion(
+                            center: myLoc,
+                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                        ))
+                    }
+                } label: {
+                    Image(systemName: "location.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        )
                 }
-            } label: {
-                Image(systemName: "location.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-                    )
             }
             
             // 顯示兩人
@@ -348,12 +378,18 @@ struct MapView: View {
 #Preview("地圖頁面") {
     NavigationStack {
         MapView()
+            .environment(LocationManager())
+            .environment(WebSocketManager())
+            .environment(APIService())
     }
 }
 
 #Preview("深色模式") {
     NavigationStack {
         MapView()
+            .environment(LocationManager())
+            .environment(WebSocketManager())
+            .environment(APIService())
     }
     .preferredColorScheme(.dark)
 }

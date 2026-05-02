@@ -13,6 +13,7 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
+    @State private var name = ""                  // 註冊時的顯示名稱
     @State private var isRegistering = false      // 切換登入/註冊
     @State private var isLoading = false
     @State private var showError = false
@@ -20,6 +21,7 @@ struct LoginView: View {
     @State private var heartScale: CGFloat = 1.0  // 愛心動畫
     
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(APIService.self) private var apiService
     
     var body: some View {
         ZStack {
@@ -95,6 +97,27 @@ struct LoginView: View {
     // MARK: - 輸入表單
     private var formSection: some View {
         VStack(spacing: 16) {
+            // 名稱輸入框（僅註冊模式）
+            if isRegistering {
+                HStack {
+                    Image(systemName: "person.fill")
+                        .foregroundStyle(AppTheme.purple)
+                        .frame(width: 24)
+                    TextField("顯示名稱", text: $name)
+                        .textContentType(.name)
+                        .autocorrectionDisabled()
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.smallRadius)
+                        .fill(colorScheme == .dark
+                              ? Color(.systemGray5)
+                              : .white)
+                        .shadow(color: AppTheme.purple.opacity(0.1), radius: 5, y: 2)
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
             // Email 輸入框
             HStack {
                 Image(systemName: "envelope.fill")
@@ -180,6 +203,7 @@ struct LoginView: View {
             withAnimation(.easeInOut(duration: 0.3)) {
                 isRegistering.toggle()
                 confirmPassword = ""
+                name = ""
             }
         } label: {
             HStack(spacing: 4) {
@@ -202,19 +226,33 @@ struct LoginView: View {
             return
         }
         
-        if isRegistering && password != confirmPassword {
-            errorMessage = "兩次密碼不一致"
-            showError = true
-            return
+        if isRegistering {
+            guard !name.isEmpty else {
+                errorMessage = "請填寫顯示名稱"
+                showError = true
+                return
+            }
+            guard password == confirmPassword else {
+                errorMessage = "兩次密碼不一致"
+                showError = true
+                return
+            }
         }
         
         isLoading = true
         
-        // TODO: 呼叫 FirebaseService 進行登入/註冊
-        // 目前用假延遲模擬
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        Task {
+            do {
+                if isRegistering {
+                    try await apiService.register(email: email, password: password, name: name)
+                } else {
+                    try await apiService.login(email: email, password: password)
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
             isLoading = false
-            // 登入成功後由 Service 層切換畫面
         }
     }
 }
@@ -222,9 +260,11 @@ struct LoginView: View {
 // MARK: - Preview
 #Preview("登入模式") {
     LoginView()
+        .environment(APIService())
 }
 
 #Preview("深色模式") {
     LoginView()
+        .environment(APIService())
         .preferredColorScheme(.dark)
 }

@@ -48,11 +48,13 @@
  Value: （如果未來加入廣告才需要）
  
  ============================================================
- Firebase 設定
+ 後端設定
  ============================================================
  
- 需要將 GoogleService-Info.plist 加入專案根目錄
- 從 Firebase Console → Project Settings → iOS App 下載
+ 本專案使用自建後端（Express + MySQL + WebSocket）
+ API Base URL: https://anzufish.org/couple-api
+ WebSocket URL: wss://anzufish.org/couple-ws
+ 不需要 GoogleService-Info.plist
  
  ============================================================
  Xcode Project 設定

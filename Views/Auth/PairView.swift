@@ -10,14 +10,18 @@ import SwiftUI
 
 struct PairView: View {
     // MARK: - 狀態
-    @State private var myCode = "A3F7K9"           // 假資料：自己的配對碼
+    @State private var myCode = ""                  // 自己的配對碼
     @State private var partnerCode = ""             // 輸入對方的配對碼
     @State private var isPairing = false            // 配對中
     @State private var isPaired = false             // 配對成功
     @State private var heartOffset: CGFloat = 100   // 愛心動畫偏移
     @State private var showConfetti = false         // 成功特效
+    @State private var isGeneratingCode = false     // 正在生成配對碼
+    @State private var showError = false
+    @State private var errorMessage = ""
     
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(APIService.self) private var apiService
     
     // 配對碼每個字元拆開顯示
     private var codeCharacters: [String] {
@@ -41,6 +45,15 @@ struct PairView: View {
             }
         }
         .animation(.easeInOut(duration: 0.5), value: isPaired)
+        .alert("錯誤", isPresented: $showError) {
+            Button("好的", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+        .task {
+            // 頁面出現時自動生成配對碼
+            await generateCode()
+        }
     }
     
     // MARK: - 配對輸入畫面
@@ -90,20 +103,25 @@ struct PairView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
-            // 6 位碼顯示
-            HStack(spacing: 8) {
-                ForEach(Array(codeCharacters.enumerated()), id: \.offset) { _, char in
-                    Text(char)
-                        .font(.system(size: 28, weight: .bold, design: .monospaced))
-                        .foregroundStyle(AppTheme.primaryGradient)
-                        .frame(width: 44, height: 56)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.smallRadius)
-                                .fill(colorScheme == .dark
-                                      ? Color(.systemGray5)
-                                      : .white)
-                                .shadow(color: AppTheme.pink.opacity(0.15), radius: 4, y: 2)
-                        )
+            if isGeneratingCode {
+                ProgressView()
+                    .frame(height: 56)
+            } else {
+                // 6 位碼顯示
+                HStack(spacing: 8) {
+                    ForEach(Array(codeCharacters.enumerated()), id: \.offset) { _, char in
+                        Text(char)
+                            .font(.system(size: 28, weight: .bold, design: .monospaced))
+                            .foregroundStyle(AppTheme.primaryGradient)
+                            .frame(width: 44, height: 56)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppTheme.smallRadius)
+                                    .fill(colorScheme == .dark
+                                          ? Color(.systemGray5)
+                                          : .white)
+                                    .shadow(color: AppTheme.pink.opacity(0.15), radius: 4, y: 2)
+                            )
+                    }
                 }
             }
             
@@ -124,6 +142,7 @@ struct PairView: View {
                         .fill(AppTheme.pink.opacity(0.12))
                 )
             }
+            .disabled(myCode.isEmpty)
         }
         .cardStyle()
     }
@@ -233,19 +252,6 @@ struct PairView: View {
                     Text("你們已經連結在一起了 💕")
                         .font(.title3)
                         .foregroundStyle(.secondary)
-                    
-                    // 繼續按鈕
-                    Button {
-                        // TODO: 導航到主頁面
-                    } label: {
-                        HStack {
-                            Text("開始使用")
-                            Image(systemName: "arrow.right")
-                        }
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .padding(.horizontal, 48)
-                    .padding(.top, 20)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -254,26 +260,44 @@ struct PairView: View {
         }
     }
     
+    // MARK: - 生成配對碼
+    private func generateCode() async {
+        isGeneratingCode = true
+        do {
+            myCode = try await apiService.generatePairCode()
+        } catch {
+            errorMessage = "生成配對碼失敗：\(error.localizedDescription)"
+            showError = true
+        }
+        isGeneratingCode = false
+    }
+    
     // MARK: - 配對邏輯
     private func startPairing() {
         isPairing = true
         
-        // TODO: 呼叫 FirebaseService 進行配對
-        // 模擬配對過程
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            isPairing = false
-            isPaired = true
-            
-            // 愛心合體動畫
-            withAnimation(.easeInOut(duration: 0.8)) {
-                heartOffset = 0
-            }
-            
-            // 顯示成功文字
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+        Task {
+            do {
+                try await apiService.connectWithCode(partnerCode)
+                
+                // 配對成功
+                isPairing = false
+                isPaired = true
+                
+                // 愛心合體動畫
+                withAnimation(.easeInOut(duration: 0.8)) {
+                    heartOffset = 0
+                }
+                
+                // 顯示成功文字
+                try? await Task.sleep(for: .milliseconds(900))
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                     showConfetti = true
                 }
+            } catch {
+                isPairing = false
+                errorMessage = error.localizedDescription
+                showError = true
             }
         }
     }
@@ -282,9 +306,11 @@ struct PairView: View {
 // MARK: - Preview
 #Preview("配對頁面") {
     PairView()
+        .environment(APIService())
 }
 
 #Preview("深色模式") {
     PairView()
+        .environment(APIService())
         .preferredColorScheme(.dark)
 }

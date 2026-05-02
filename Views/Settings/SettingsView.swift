@@ -282,7 +282,7 @@ struct SettingsView: View {
     
     /// 解除配對
     private func unpairPartner() {
-        // TODO: 呼叫 FirebaseService 解除配對
+        // TODO: 呼叫 APIService 解除配對
         withAnimation {
             partnerName = nil
         }
@@ -290,7 +290,7 @@ struct SettingsView: View {
     
     /// 登出
     private func logout() {
-        // TODO: 呼叫 FirebaseService 登出
+        // TODO: 呼叫 APIService 登出
     }
 }
 

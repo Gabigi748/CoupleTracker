@@ -334,8 +334,7 @@ struct SOSView: View {
             showCheckmark = true
         }
         
-        // TODO: 呼叫 FirebaseService 發送 SOS 訊息與位置
-        // TODO: 呼叫 NotificationService 發送推播給對方
+        // TODO: 呼叫 APIService 發送 SOS 訊息與位置
     }
 }
 

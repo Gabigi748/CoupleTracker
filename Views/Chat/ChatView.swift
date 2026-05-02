@@ -1,27 +1,28 @@
 // ChatView.swift
 // CoupleTracker
 //
-// 簡易聊天頁面
+// 聊天頁面
 // - 氣泡式訊息（自己右邊粉色，對方左邊紫色）
 // - 底部輸入框 + 發送按鈕
 // - 自動滾動到最新訊息
+// - 透過 WebSocketManager 收發即時訊息
 
 import SwiftUI
-
-// MARK: - 聊天氣泡資料模型（僅供 UI 顯示用，避免與 Models/ChatMessage 衝突）
-struct ChatBubbleData: Identifiable, Equatable {
-    let id = UUID()
-    let text: String
-    let isMe: Bool           // true = 自己, false = 對方
-    let timestamp: Date
-}
 
 struct ChatView: View {
     // MARK: - 狀態
     @State private var messageText = ""
-    @State private var messages: [ChatBubbleData] = ChatBubbleData.sampleMessages
+    @State private var messages: [ChatBubbleData] = []
+    @State private var isLoadingHistory = true
     
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(WebSocketManager.self) private var webSocketManager
+    @Environment(APIService.self) private var apiService
+    
+    // 當前用戶 ID
+    private var myUserId: String {
+        apiService.currentUser?.uid ?? ""
+    }
     
     // 時間格式化
     private let timeFormatter: DateFormatter = {
@@ -33,14 +34,54 @@ struct ChatView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // 聊天訊息列表
-            messageList
+            if isLoadingHistory {
+                ProgressView("載入聊天記錄...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // 聊天訊息列表
+                messageList
+            }
             
             // 底部輸入區
             inputBar
         }
         .navigationTitle("💬 聊天")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadChatHistory()
+        }
+        .onChange(of: webSocketManager.newMessage) { _, newMsg in
+            // 收到新的即時訊息
+            guard let msg = newMsg else { return }
+            let bubble = ChatBubbleData(
+                id: msg.id,
+                text: msg.text,
+                isMe: msg.senderId == myUserId,
+                timestamp: msg.timestamp
+            )
+            withAnimation(.easeOut(duration: 0.2)) {
+                messages.append(bubble)
+            }
+        }
+    }
+    
+    // MARK: - 載入聊天歷史
+    private func loadChatHistory() async {
+        do {
+            let history = try await apiService.getChatHistory(page: 1)
+            messages = history.map { msg in
+                ChatBubbleData(
+                    id: msg.id,
+                    text: msg.text,
+                    isMe: msg.senderId == myUserId,
+                    timestamp: msg.timestamp
+                )
+            }
+        } catch {
+            // 載入失敗，顯示空列表
+            messages = []
+        }
+        isLoadingHistory = false
     }
     
     // MARK: - 訊息列表
@@ -125,7 +166,9 @@ struct ChatView: View {
         let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         
+        // 立即在本地顯示（樂觀更新）
         let newMessage = ChatBubbleData(
+            id: UUID().uuidString,
             text: trimmed,
             isMe: true,
             timestamp: Date()
@@ -137,31 +180,23 @@ struct ChatView: View {
         
         messageText = ""
         
-        // TODO: 透過 FirebaseService 發送訊息
-        // 模擬對方回覆
-        simulateReply()
+        // 透過 WebSocket 發送
+        webSocketManager.sendChat(trimmed)
     }
+}
+
+// MARK: - 聊天氣泡資料模型
+struct ChatBubbleData: Identifiable, Equatable {
+    let id: String
+    let text: String
+    let isMe: Bool           // true = 自己, false = 對方
+    let timestamp: Date
     
-    // 模擬對方回覆（假資料）
-    private func simulateReply() {
-        let replies = [
-            "好的～ 💕",
-            "我在路上了！",
-            "等我一下 🥰",
-            "想你了 ❤️",
-            "晚餐想吃什麼？",
-        ]
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            let reply = ChatBubbleData(
-                text: replies.randomElement() ?? "💕",
-                isMe: false,
-                timestamp: Date()
-            )
-            withAnimation(.easeOut(duration: 0.2)) {
-                messages.append(reply)
-            }
-        }
+    init(id: String = UUID().uuidString, text: String, isMe: Bool, timestamp: Date) {
+        self.id = id
+        self.text = text
+        self.isMe = isMe
+        self.timestamp = timestamp
     }
 }
 
@@ -225,67 +260,20 @@ struct MessageBubble: View {
     }
 }
 
-// MARK: - 假資料
-extension ChatBubbleData {
-    static let sampleMessages: [ChatBubbleData] = {
-        let calendar = Calendar.current
-        let today = Date()
-        
-        return [
-            ChatBubbleData(
-                text: "早安～今天天氣好好 ☀️",
-                isMe: false,
-                timestamp: calendar.date(bySettingHour: 8, minute: 30, second: 0, of: today) ?? today
-            ),
-            ChatBubbleData(
-                text: "早安寶貝！你起床了嗎？",
-                isMe: true,
-                timestamp: calendar.date(bySettingHour: 8, minute: 32, second: 0, of: today) ?? today
-            ),
-            ChatBubbleData(
-                text: "剛起來～準備出門了",
-                isMe: false,
-                timestamp: calendar.date(bySettingHour: 8, minute: 35, second: 0, of: today) ?? today
-            ),
-            ChatBubbleData(
-                text: "路上小心喔 💕",
-                isMe: true,
-                timestamp: calendar.date(bySettingHour: 8, minute: 36, second: 0, of: today) ?? today
-            ),
-            ChatBubbleData(
-                text: "中午一起吃飯嗎？",
-                isMe: false,
-                timestamp: calendar.date(bySettingHour: 11, minute: 0, second: 0, of: today) ?? today
-            ),
-            ChatBubbleData(
-                text: "好啊！想吃什麼？",
-                isMe: true,
-                timestamp: calendar.date(bySettingHour: 11, minute: 2, second: 0, of: today) ?? today
-            ),
-            ChatBubbleData(
-                text: "我想吃拉麵 🍜",
-                isMe: false,
-                timestamp: calendar.date(bySettingHour: 11, minute: 3, second: 0, of: today) ?? today
-            ),
-            ChatBubbleData(
-                text: "那去上次那家！我 12 點到",
-                isMe: true,
-                timestamp: calendar.date(bySettingHour: 11, minute: 5, second: 0, of: today) ?? today
-            ),
-        ]
-    }()
-}
-
 // MARK: - Preview
 #Preview("聊天頁面") {
     NavigationStack {
         ChatView()
+            .environment(WebSocketManager())
+            .environment(APIService())
     }
 }
 
 #Preview("深色模式") {
     NavigationStack {
         ChatView()
+            .environment(WebSocketManager())
+            .environment(APIService())
     }
     .preferredColorScheme(.dark)
 }

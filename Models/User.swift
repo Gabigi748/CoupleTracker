@@ -6,12 +6,12 @@
 import Foundation
 
 /// 用戶模型
-/// 對應 Firestore 中 `users/{uid}` 文件
+/// 對應後端 users 表
 struct AppUser: Codable, Identifiable, Sendable {
-    /// 用戶唯一識別碼（Firebase Auth UID）
+    /// 用戶唯一識別碼
     var id: String { uid }
     
-    /// Firebase Auth UID
+    /// 用戶 UID
     let uid: String
     
     /// 用戶顯示名稱
