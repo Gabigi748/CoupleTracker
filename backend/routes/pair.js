@@ -119,11 +119,22 @@ router.post('/connect', auth, async (req, res) => {
       conn.release();
     }
 
+    // 查詢配對對象的完整資料
+    const [partnerInfo] = await db.query(
+      'SELECT id, email, name FROM users WHERE id = ?',
+      [pairCode.user_id]
+    );
+
     res.json({
       success: true,
       data: {
-        partner_id: pairCode.user_id,
-        message: '配對成功！',
+        is_paired: true,
+        partner_uid: String(pairCode.user_id),
+        partner: partnerInfo.length > 0 ? {
+          uid: String(partnerInfo[0].id),
+          email: partnerInfo[0].email,
+          name: partnerInfo[0].name || '',
+        } : null,
       },
     });
   } catch (err) {
@@ -187,18 +198,19 @@ router.get('/status', auth, async (req, res) => {
     if (!user.partner_id) {
       return res.json({
         success: true,
-        data: { paired: false, partner: null },
+        data: { is_paired: false, partner_uid: null, partner: null },
       });
     }
 
     res.json({
       success: true,
       data: {
-        paired: true,
+        is_paired: true,
+        partner_uid: String(user.partner_id),
         partner: {
-          id: user.partner_id,
-          name: user.partner_name,
-          email: user.partner_email,
+          uid: String(user.partner_id),
+          name: user.partner_name || '',
+          email: user.partner_email || '',
         },
       },
     });

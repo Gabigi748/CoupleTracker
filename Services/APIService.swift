@@ -435,6 +435,13 @@ final class APIService {
             logout()
             throw CoupleTrackerError.notAuthenticated
             
+        case 400:
+            // 請求錯誤，解析後端錯誤訊息
+            if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                throw CoupleTrackerError.validationError(errorResponse.errorMessage)
+            }
+            throw CoupleTrackerError.validationError("請求資料有誤")
+            
         case 404:
             throw CoupleTrackerError.notFound
             
@@ -444,13 +451,13 @@ final class APIService {
         case 422:
             // 驗證錯誤，嘗試解析錯誤訊息
             if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-                throw CoupleTrackerError.validationError(errorResponse.message)
+                throw CoupleTrackerError.validationError(errorResponse.errorMessage)
             }
             throw CoupleTrackerError.validationError("請求資料有誤")
             
         default:
             if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-                throw CoupleTrackerError.serverError(errorResponse.message)
+                throw CoupleTrackerError.serverError(errorResponse.errorMessage)
             }
             throw CoupleTrackerError.serverError("伺服器錯誤（\(httpResponse.statusCode)）")
         }
@@ -543,8 +550,13 @@ struct EmptyResponse: Codable {}
 
 /// 錯誤回應
 struct ErrorResponse: Codable {
-    let message: String
-    let code: String?
+    let error: String?
+    let message: String?
+    
+    /// 取得錯誤訊息（相容 error 和 message 兩種格式）
+    var errorMessage: String {
+        error ?? message ?? "未知錯誤"
+    }
 }
 
 // MARK: - 錯誤定義
