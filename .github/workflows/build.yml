@@ -60,17 +60,6 @@ jobs:
                   NSLocationWhenInUseUsageDescription: "需要您的位置來顯示在地圖上"
                   NSLocationAlwaysAndWhenInUseUsageDescription: "需要背景定位來即時更新位置給對方"
                   UIBackgroundModes: [location, remote-notification]
-              dependencies:
-                - package: firebase-ios-sdk
-                  product: FirebaseAuth
-                - package: firebase-ios-sdk
-                  product: FirebaseFirestore
-                - package: firebase-ios-sdk
-                  product: FirebaseMessaging
-          packages:
-            firebase-ios-sdk:
-              url: https://github.com/firebase/firebase-ios-sdk.git
-              from: "11.0.0"
           EOF
           
           brew install xcodegen
