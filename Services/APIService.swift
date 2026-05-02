@@ -228,7 +228,7 @@ final class APIService {
     
     // MARK: - 位置歷史 API
     
-    /// 取得位置歷史
+    /// 取得位置歷史（舊版，保留相容性）
     /// - Parameters:
     ///   - from: 起始時間
     ///   - to: 結束時間
@@ -243,6 +243,31 @@ final class APIService {
         )
         
         return locations
+    }
+    
+    /// 取得位置歷史（新版，支援查詢自己或配對對象）
+    /// - Parameters:
+    ///   - userId: 要查詢的用戶 ID（nil 表示查自己）
+    ///   - start: 起始時間
+    ///   - end: 結束時間
+    ///   - limit: 最大回傳筆數（預設 500）
+    /// - Returns: 位置歷史點陣列
+    func getLocationHistory(userId: String? = nil, start: Date, end: Date, limit: Int = 500) async throws -> [LocationHistoryPoint] {
+        let formatter = ISO8601DateFormatter()
+        let startStr = formatter.string(from: start)
+        let endStr = formatter.string(from: end)
+        
+        var path = "/api/locations/history?start=\(startStr)&end=\(endStr)&limit=\(limit)"
+        if let userId {
+            path += "&user_id=\(userId)"
+        }
+        
+        let points: [LocationHistoryPoint] = try await request(
+            method: "GET",
+            path: path
+        )
+        
+        return points
     }
     
     // MARK: - 聊天歷史 API

@@ -225,12 +225,13 @@ extension LocationManager: CLLocationManagerDelegate {
         let location = Location.from(clLocation: clLocation)
         
         // 背景任務保護：確保位置更新能完成發送（即使 App 在背景）
-        var bgTask: UIBackgroundTaskIdentifier = .invalid
-        bgTask = UIApplication.shared.beginBackgroundTask {
-            UIApplication.shared.endBackgroundTask(bgTask)
-        }
-        
+        // 使用 MainActor 同步啟動背景任務，避免 Swift 6 data race
         Task { @MainActor in
+            var bgTask: UIBackgroundTaskIdentifier = .invalid
+            bgTask = UIApplication.shared.beginBackgroundTask {
+                UIApplication.shared.endBackgroundTask(bgTask)
+            }
+            
             // 更新精度顯示（即使精度差也要顯示）
             currentAccuracy = accuracy
             

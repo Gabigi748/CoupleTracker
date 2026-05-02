@@ -74,8 +74,8 @@ final class WebSocketManager {
     /// 重連嘗試次數（用於 exponential backoff）
     private var reconnectAttempts: Int = 0
     
-    /// 最大重連嘗試次數
-    private let maxReconnectAttempts: Int = 10
+    /// 最大重連嘗試次數（背景保活需要持續重連）
+    private let maxReconnectAttempts: Int = 50
     
     /// 是否主動斷線（避免自動重連）
     private var isManualDisconnect: Bool = false
@@ -633,6 +633,7 @@ final class WebSocketManager {
     }
     
     /// 排程重連（Exponential Backoff）
+    /// 背景模式下使用 beginBackgroundTask 保護重連過程
     private func scheduleReconnect() {
         guard reconnectAttempts < maxReconnectAttempts else {
             connectionState = .disconnected
@@ -646,9 +647,25 @@ final class WebSocketManager {
         
         print("🔄 將在 \(delay) 秒後重連（第 \(reconnectAttempts) 次嘗試）")
         
+        // 使用 beginBackgroundTask 保護重連過程（App 在背景時）
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "WebSocketReconnect") {
+            // 背景時間即將到期，結束任務
+            UIApplication.shared.endBackgroundTask(bgTask)
+            bgTask = .invalid
+        }
+        
         reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.establishConnection()
+                
+                // 給連線建立一點時間，然後結束背景任務
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    if bgTask != .invalid {
+                        UIApplication.shared.endBackgroundTask(bgTask)
+                        bgTask = .invalid
+                    }
+                }
             }
         }
     }
