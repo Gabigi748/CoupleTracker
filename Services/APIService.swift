@@ -36,7 +36,7 @@ final class APIService {
     // MARK: - 私有屬性
     
     /// 後端 API Base URL
-    private let baseURL = "https://anzufish.org/couple-api"
+    private let baseURL = "http://anzufish.org/couple-api"
     
     /// JWT Token（從 Keychain 讀取）
     private var token: String?

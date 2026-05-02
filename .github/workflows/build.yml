@@ -54,9 +54,16 @@ jobs:
                 path: App/Info.plist
                 properties:
                   CFBundleDisplayName: CoupleTracker
+                  UILaunchScreen:
+                    UIColorName: ""
+                  UIRequiresFullScreen: true
+                  UISupportedInterfaceOrientations:
+                    - UIInterfaceOrientationPortrait
                   NSLocationWhenInUseUsageDescription: "需要您的位置來顯示在地圖上"
                   NSLocationAlwaysAndWhenInUseUsageDescription: "需要背景定位來即時更新位置給對方"
                   NSLocationAlwaysUsageDescription: "需要背景定位來即時更新位置給對方"
+                  NSAppTransportSecurity:
+                    NSAllowsArbitraryLoads: true
                   UIBackgroundModes:
                     - location
                     - remote-notification
