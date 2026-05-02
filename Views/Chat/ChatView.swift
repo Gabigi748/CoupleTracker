@@ -104,8 +104,8 @@ struct ChatView: View {
                         Circle()
                             .fill(
                                 messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? Color.gray
-                                : AppTheme.primaryGradient
+                                ? AnyShapeStyle(Color.gray)
+                                : AnyShapeStyle(AppTheme.primaryGradient)
                             )
                     )
             }

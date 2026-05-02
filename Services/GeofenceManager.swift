@@ -68,7 +68,7 @@ final class GeofenceManager {
                 Task { @MainActor in
                     self.zones = loadedZones
                     // 重新同步監控狀態
-                    self.syncMonitoredRegions()
+                    await self.syncMonitoredRegions()
                 }
             }
     }
@@ -84,13 +84,13 @@ final class GeofenceManager {
         }
         
         // 寫入 Firestore
-        try db.collection("users").document(uid)
+        try await db.collection("users").document(uid)
             .collection("geofences")
             .document(zone.id)
             .setData(from: zone)
         
         // 開始監控
-        locationManager.startMonitoring(zone: zone)
+        _ = await locationManager.startMonitoring(zone: zone)
     }
     
     /// 更新圍欄區域
@@ -99,16 +99,16 @@ final class GeofenceManager {
     ///   - zone: 更新後的圍欄
     func updateZone(for uid: String, zone: GeofenceZone) async throws {
         // 先停止舊的監控
-        locationManager.stopMonitoring(zone: zone)
+        await locationManager.stopMonitoring(zone: zone)
         
         // 更新 Firestore
-        try db.collection("users").document(uid)
+        try await db.collection("users").document(uid)
             .collection("geofences")
             .document(zone.id)
             .setData(from: zone)
         
         // 重新開始監控
-        locationManager.startMonitoring(zone: zone)
+        _ = await locationManager.startMonitoring(zone: zone)
     }
     
     /// 刪除圍欄區域
@@ -117,7 +117,7 @@ final class GeofenceManager {
     ///   - zone: 要刪除的圍欄
     func deleteZone(for uid: String, zone: GeofenceZone) async throws {
         // 停止監控
-        locationManager.stopMonitoring(zone: zone)
+        await locationManager.stopMonitoring(zone: zone)
         
         // 從 Firestore 刪除
         try await db.collection("users").document(uid)
@@ -130,7 +130,7 @@ final class GeofenceManager {
     /// - Parameter uid: 用戶 UID
     func deleteAllZones(for uid: String) async throws {
         // 停止所有監控
-        locationManager.stopAllMonitoring()
+        await locationManager.stopAllMonitoring()
         
         // 批次刪除 Firestore 文件
         let batch = db.batch()
@@ -147,13 +147,13 @@ final class GeofenceManager {
     
     /// 同步 Core Location 監控的圍欄與 Firestore 中的圍欄列表
     /// 確保兩邊一致
-    private func syncMonitoredRegions() {
+    private func syncMonitoredRegions() async {
         // 先停止所有監控
-        locationManager.stopAllMonitoring()
+        await locationManager.stopAllMonitoring()
         
         // 重新監控所有圍欄
         for zone in zones {
-            locationManager.startMonitoring(zone: zone)
+            _ = await locationManager.startMonitoring(zone: zone)
         }
     }
     

@@ -138,7 +138,7 @@ final class FirebaseService {
         guard let uid = currentUser?.uid else { return }
         
         // 更新用戶文件中的位置
-        try db.collection("users").document(uid).updateData([
+        try await db.collection("users").document(uid).updateData([
             "location": [
                 "id": location.id,
                 "latitude": location.latitude,
