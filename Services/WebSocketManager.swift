@@ -237,8 +237,9 @@ final class WebSocketManager {
         // 啟用電池監控
         UIDevice.current.isBatteryMonitoringEnabled = true
         
+        // 螢幕解鎖（真正的螢幕開啟）
         NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
+            forName: UIApplication.protectedDataDidBecomeAvailableNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -247,8 +248,9 @@ final class WebSocketManager {
             }
         }
         
+        // 螢幕鎖定（真正的螢幕關閉）
         NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
+            forName: UIApplication.protectedDataWillBecomeUnavailableNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -262,12 +264,12 @@ final class WebSocketManager {
     private func stopScreenMonitoring() {
         NotificationCenter.default.removeObserver(
             self,
-            name: UIApplication.didBecomeActiveNotification,
+            name: UIApplication.protectedDataDidBecomeAvailableNotification,
             object: nil
         )
         NotificationCenter.default.removeObserver(
             self,
-            name: UIApplication.willResignActiveNotification,
+            name: UIApplication.protectedDataWillBecomeUnavailableNotification,
             object: nil
         )
     }
