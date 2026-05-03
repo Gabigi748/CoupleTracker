@@ -36,6 +36,11 @@ final class LocationManager: NSObject {
     /// 目前監控中的圍欄數量
     var monitoredRegionsCount: Int = 0
     
+    /// 定位權限狀態值（0=notDetermined, 1=restricted, 2=denied, 3=always, 4=whenInUse）
+    var authorizationStatusValue: Int {
+        locationManager.authorizationStatus.rawValue
+    }
+    
     /// 圍欄事件回調
     var onGeofenceEvent: ((GeofenceEvent) -> Void)?
     

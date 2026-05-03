@@ -7,6 +7,7 @@
 import SwiftUI
 import UIKit
 import CoreLocation
+import UserNotifications
 
 // MARK: - App Delegate
 
@@ -203,6 +204,21 @@ struct CoupleTrackerApp: App {
             // 載入圍欄並開始監控
             Task {
                 await geofenceManager.loadZones()
+                
+                // Debug: 發送本地通知顯示圍欄載入狀態
+                let zoneCount = geofenceManager.zones.count
+                let zoneNames = geofenceManager.zones.map { $0.name }.joined(separator: ", ")
+                let monitoredCount = locationManager.monitoredRegionsCount
+                let authStatus = locationManager.authorizationStatusValue
+                // authStatus: 0=notDetermined, 1=restricted, 2=denied, 3=authorizedAlways, 4=authorizedWhenInUse
+                let debugMsg = "圍欄: \(zoneCount)個[\(zoneNames)] 監控中: \(monitoredCount)個 定位權限: \(authStatus)"
+                
+                let content = UNMutableNotificationContent()
+                content.title = "[Debug] 圍欄狀態"
+                content.body = debugMsg
+                content.sound = .default
+                let request = UNNotificationRequest(identifier: "geofence-debug-\(Date().timeIntervalSince1970)", content: content, trigger: nil)
+                try? await UNUserNotificationCenter.current().add(request)
             }
         }
         
