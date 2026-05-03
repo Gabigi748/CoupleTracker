@@ -26,3 +26,12 @@ GoogleService-Info.plist
 
 # CocoaPods (if used)
 Pods/
+
+# Environment
+.env
+*.env
+!.env.example
+
+# Node
+node_modules/
+backend/node_modules/
