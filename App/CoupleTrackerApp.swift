@@ -167,10 +167,10 @@ struct CoupleTrackerApp: App {
         // 請求定位權限
         locationManager.requestAlwaysAuthorization()
         
-        // 設定圍欄事件回調
-        locationManager.onGeofenceEvent = { event in
-            handleGeofenceEvent(event)
-        }
+        // 系統圍欄回調已停用，改用軟體圍欄（在 onLocationUpdate 裡即時檢查）
+        // locationManager.onGeofenceEvent = { event in
+        //     handleGeofenceEvent(event)
+        // }
         
         // 設定位置更新回調 — 透過 WebSocket 發送位置 + 更新 Live Activity + 軟體圍欄檢查
         locationManager.onLocationUpdate = { location in

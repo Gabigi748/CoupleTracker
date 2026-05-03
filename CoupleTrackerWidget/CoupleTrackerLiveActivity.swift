@@ -18,8 +18,7 @@ struct CoupleTrackerLiveActivity: Widget {
                 // 靈動島展開狀態（Expanded）
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 4) {
-                        Image(systemName: "heart.fill")
-                            .foregroundStyle(.pink)
+                        Text("💕")
                             .font(.caption)
                         Text(context.state.partnerName)
                             .font(.caption.bold())
@@ -29,29 +28,28 @@ struct CoupleTrackerLiveActivity: Widget {
                 
                 DynamicIslandExpandedRegion(.trailing) {
                     HStack(spacing: 4) {
-                        Image(systemName: "location.fill")
-                            .foregroundStyle(.blue)
+                        Text("📍")
                             .font(.caption2)
                         Text(formatDistance(context.state.partnerDistance))
                             .font(.caption.bold())
+                            .foregroundStyle(distanceColor(context.state.partnerDistance))
                     }
                 }
                 
                 DynamicIslandExpandedRegion(.center) {
                     HStack(spacing: 12) {
-                        // 電量
+                        // 電量（可愛 emoji）
                         HStack(spacing: 3) {
-                            Image(systemName: batteryIconName(context.state.partnerBattery))
-                                .foregroundStyle(batteryColor(context.state.partnerBattery))
+                            Text(batteryEmoji(context.state.partnerBattery))
                                 .font(.caption2)
                             Text("\(context.state.partnerBattery)%")
                                 .font(.caption2)
                                 .foregroundStyle(batteryColor(context.state.partnerBattery))
                         }
                         
-                        // 移動狀態
+                        // 移動狀態（可愛 emoji）
                         HStack(spacing: 3) {
-                            Image(systemName: activityIcon(context.state.partnerActivity))
+                            Text(activityEmoji(context.state.partnerActivity))
                                 .font(.caption2)
                             Text(activityText(context.state.partnerActivity))
                                 .font(.caption2)
@@ -62,31 +60,33 @@ struct CoupleTrackerLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
                         Spacer()
-                        Text("更新於 \(context.state.lastUpdateTime, style: .relative)")
+                        Text(distanceMood(context.state.partnerDistance))
+                            .font(.caption2)
+                        Text("・")
+                            .foregroundStyle(.secondary)
+                        Text(context.state.lastUpdateTime, style: .relative)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
                 }
             } compactLeading: {
-                // 靈動島緊湊狀態 — 左邊：對方名字
+                // 靈動島緊湊狀態 — 左邊：愛心 + 對方名字
                 HStack(spacing: 3) {
-                    Image(systemName: "heart.fill")
-                        .foregroundStyle(.pink)
+                    Text("💕")
                         .font(.caption2)
                     Text(context.state.partnerName)
                         .font(.caption2.bold())
                         .lineLimit(1)
                 }
             } compactTrailing: {
-                // 靈動島緊湊狀態 — 右邊：距離
+                // 靈動島緊湊狀態 — 右邊：距離（顏色隨距離變化）
                 Text(formatDistance(context.state.partnerDistance))
                     .font(.caption2.bold())
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(distanceColor(context.state.partnerDistance))
             } minimal: {
-                // 最小狀態（與其他 Live Activity 共存時）
-                Image(systemName: "heart.fill")
-                    .foregroundStyle(.pink)
+                // 最小狀態
+                Text("💕")
                     .font(.caption)
             }
         }
@@ -152,14 +152,38 @@ struct CoupleTrackerLiveActivity: Widget {
     // MARK: - Helper Functions
     
     /// 格式化距離
-    /// - < 1000m → "850m"
-    /// - >= 1000m → "3.2km"
     private func formatDistance(_ meters: Double) -> String {
         if meters < 1000 {
             return "\(Int(meters))m"
         } else {
             return String(format: "%.1fkm", meters / 1000)
         }
+    }
+    
+    /// 距離顏色（越近越粉，越遠越藍）
+    private func distanceColor(_ meters: Double) -> Color {
+        if meters < 500 { return .pink }
+        if meters < 2000 { return .purple }
+        if meters < 10000 { return .blue }
+        return .cyan
+    }
+    
+    /// 距離心情文字
+    private func distanceMood(_ meters: Double) -> String {
+        if meters < 100 { return "就在身邊 ♡" }
+        if meters < 500 { return "很近很近~" }
+        if meters < 2000 { return "不遠不遠" }
+        if meters < 10000 { return "有點想你" }
+        if meters < 50000 { return "好想見你..." }
+        return "想你想你想你"
+    }
+    
+    /// 電量 emoji
+    private func batteryEmoji(_ level: Int) -> String {
+        if level > 75 { return "🔋" }
+        if level > 50 { return "🔋" }
+        if level > 20 { return "🪫" }
+        return "🪫"
     }
     
     /// 電量圖示名稱
@@ -177,7 +201,19 @@ struct CoupleTrackerLiveActivity: Widget {
         return .red
     }
     
-    /// 移動狀態圖示
+    /// 移動狀態 emoji
+    private func activityEmoji(_ activity: String) -> String {
+        switch activity {
+        case "walking": return "🚶"
+        case "running": return "🏃"
+        case "cycling": return "🚴"
+        case "driving": return "🚗"
+        case "stationary": return "🧍"
+        default: return "❓"
+        }
+    }
+    
+    /// 移動狀態圖示（保留給鎖屏用）
     private func activityIcon(_ activity: String) -> String {
         switch activity {
         case "walking": return "figure.walk"
