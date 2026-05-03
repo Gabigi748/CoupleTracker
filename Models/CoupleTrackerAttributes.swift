@@ -24,6 +24,8 @@ struct CoupleTrackerAttributes: ActivityAttributes {
         var partnerActivity: String
         /// 最後更新時間
         var lastUpdateTime: Date
+        /// 開始靜止的時間（用於判斷是否超過 3 小時顯示睡覺貓）
+        var stationarySince: Date?
         
         enum CodingKeys: String, CodingKey {
             case partnerName
@@ -31,6 +33,7 @@ struct CoupleTrackerAttributes: ActivityAttributes {
             case partnerBattery
             case partnerActivity
             case lastUpdateTime
+            case stationarySince
         }
     }
     

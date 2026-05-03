@@ -18,8 +18,11 @@ struct CoupleTrackerLiveActivity: Widget {
                 // 靈動島展開狀態（Expanded）
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 4) {
-                        Text("💕")
-                            .font(.caption)
+                        // 可愛像素貓（根據移動狀態切換）
+                        Image(catImageName(activity: context.state.partnerActivity, stationarySince: context.state.stationarySince))
+                            .resizable()
+                            .interpolation(.none)
+                            .frame(width: 28, height: 28)
                         Text(context.state.partnerName)
                             .font(.caption.bold())
                             .lineLimit(1)
@@ -28,7 +31,8 @@ struct CoupleTrackerLiveActivity: Widget {
                 
                 DynamicIslandExpandedRegion(.trailing) {
                     HStack(spacing: 4) {
-                        Text("📍")
+                        Image(systemName: "location.fill")
+                            .foregroundStyle(distanceColor(context.state.partnerDistance))
                             .font(.caption2)
                         Text(formatDistance(context.state.partnerDistance))
                             .font(.caption.bold())
@@ -50,7 +54,7 @@ struct CoupleTrackerLiveActivity: Widget {
                                 .contentTransition(.numericText())
                         }
                         
-                        // 移動狀態（SF Symbol + 文字）
+                        // 移動狀態文字
                         HStack(spacing: 3) {
                             Image(systemName: activityIcon(context.state.partnerActivity))
                                 .foregroundStyle(activityColor(context.state.partnerActivity))
@@ -76,10 +80,12 @@ struct CoupleTrackerLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                // 靈動島緊湊狀態 — 左邊：愛心 + 對方名字
-                HStack(spacing: 3) {
-                    Text("💕")
-                        .font(.caption2)
+                // 靈動島緊湊狀態 — 左邊：像素貓 + 對方名字
+                HStack(spacing: 2) {
+                    Image(catImageName(activity: context.state.partnerActivity, stationarySince: context.state.stationarySince))
+                        .resizable()
+                        .interpolation(.none)
+                        .frame(width: 20, height: 20)
                     Text(context.state.partnerName)
                         .font(.caption2.bold())
                         .lineLimit(1)
@@ -91,9 +97,11 @@ struct CoupleTrackerLiveActivity: Widget {
                     .foregroundStyle(distanceColor(context.state.partnerDistance))
                     .contentTransition(.numericText())
             } minimal: {
-                // 最小狀態
-                Text("💕")
-                    .font(.caption)
+                // 最小狀態 — 像素貓
+                Image(catImageName(activity: context.state.partnerActivity, stationarySince: context.state.stationarySince))
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(width: 22, height: 22)
             }
         }
     }
@@ -156,6 +164,31 @@ struct CoupleTrackerLiveActivity: Widget {
     }
     
     // MARK: - Helper Functions
+    
+    /// 根據移動狀態選擇像素貓圖片
+    /// - idle: 靜止（< 3小時）
+    /// - walk: 走路
+    /// - run: 快速移動（跑步/騎車/開車）
+    /// - sleep: 長時間靜止（> 3小時）
+    private func catImageName(activity: String, stationarySince: Date?) -> String {
+        switch activity {
+        case "walking":
+            return "cat_walk"
+        case "running", "cycling", "driving":
+            return "cat_run"
+        case "stationary":
+            // 超過 3 小時沒移動 → 睡覺
+            if let since = stationarySince {
+                let hours = Date().timeIntervalSince(since) / 3600
+                if hours >= 3 {
+                    return "cat_sleep"
+                }
+            }
+            return "cat_idle"
+        default:
+            return "cat_idle"
+        }
+    }
     
     /// 格式化距離
     private func formatDistance(_ meters: Double) -> String {

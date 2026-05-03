@@ -35,6 +35,12 @@ final class LiveActivityManager {
     /// Live Activity 最長持續時間（8 小時）
     private let maxDuration: TimeInterval = 8 * 60 * 60
     
+    /// 對方開始靜止的時間（用於判斷是否顯示睡覺貓）
+    private var stationarySince: Date?
+    
+    /// 上一次的移動狀態
+    private var lastActivity: String?
+    
     // MARK: - 安全檢查
     
     /// 安全檢查 ActivityKit 是否可用
@@ -93,12 +99,25 @@ final class LiveActivityManager {
         // 如果沒有活躍的 Activity，直接返回（不碰 ActivityKit）
         guard isActivityActive else { return }
         
+        // 追蹤靜止開始時間
+        if activity == "stationary" {
+            if lastActivity != "stationary" {
+                // 剛變成靜止，記錄開始時間
+                stationarySince = Date()
+            }
+        } else {
+            // 不是靜止，清除
+            stationarySince = nil
+        }
+        lastActivity = activity
+        
         let updatedState = CoupleTrackerAttributes.ContentState(
             partnerName: partnerName,
             partnerDistance: distance,
             partnerBattery: battery,
             partnerActivity: activity,
-            lastUpdateTime: Date()
+            lastUpdateTime: Date(),
+            stationarySince: stationarySince
         )
         
         let content = ActivityContent(state: updatedState, staleDate: nil)
@@ -122,7 +141,8 @@ final class LiveActivityManager {
             partnerDistance: 0,
             partnerBattery: 0,
             partnerActivity: "unknown",
-            lastUpdateTime: Date()
+            lastUpdateTime: Date(),
+            stationarySince: nil
         )
         
         let content = ActivityContent(state: finalState, staleDate: nil)
@@ -162,7 +182,8 @@ final class LiveActivityManager {
             partnerDistance: 0,
             partnerBattery: -1,
             partnerActivity: "unknown",
-            lastUpdateTime: Date()
+            lastUpdateTime: Date(),
+            stationarySince: nil
         )
         
         let content = ActivityContent(state: initialState, staleDate: nil)

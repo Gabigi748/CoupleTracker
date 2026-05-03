@@ -15,6 +15,7 @@ struct CoupleTrackerAttributes: ActivityAttributes {
         var partnerBattery: Int
         var partnerActivity: String
         var lastUpdateTime: Date
+        var stationarySince: Date?
         
         enum CodingKeys: String, CodingKey {
             case partnerName
@@ -22,6 +23,7 @@ struct CoupleTrackerAttributes: ActivityAttributes {
             case partnerBattery
             case partnerActivity
             case lastUpdateTime
+            case stationarySince
         }
     }
     
