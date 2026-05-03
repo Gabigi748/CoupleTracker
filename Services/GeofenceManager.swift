@@ -5,6 +5,7 @@
 // 已移除 Firebase 依賴，改用 APIService 呼叫自建後端
 
 import Foundation
+import CoreLocation
 import Observation
 
 /// 地理圍欄管理器
@@ -163,5 +164,50 @@ final class GeofenceManager {
     /// 取得剩餘可用圍欄數量
     var remainingSlots: Int {
         max(0, GeofenceZone.maxGeofences - zones.count)
+    }
+    
+    // MARK: - 軟體圍欄檢查（補充 iOS 系統圍欄的不足）
+    
+    /// 每個圍欄的上次狀態（true = 在圍欄內）
+    private var zoneInsideState: [String: Bool] = [:]
+    
+    /// 根據當前位置手動檢查所有圍欄的進出狀態
+    /// 每次位置更新時呼叫，比 iOS 系統圍欄更即時
+    /// - Parameter location: 當前位置
+    /// - Returns: 觸發的圍欄事件列表
+    func checkGeofences(location: CLLocation) -> [GeofenceEvent] {
+        var events: [GeofenceEvent] = []
+        
+        for zone in zones {
+            let center = CLLocation(latitude: zone.latitude, longitude: zone.longitude)
+            let distance = location.distance(from: center)
+            let isInside = distance <= zone.radius
+            let wasInside = zoneInsideState[zone.id] ?? false
+            
+            if isInside && !wasInside && zone.notifyOnEntry {
+                // 進入圍欄
+                events.append(GeofenceEvent(regionId: zone.id, type: .entry, timestamp: Date()))
+                print("[Geofence-Soft] 進入圍欄 \(zone.name) (距離: \(Int(distance))m, 半徑: \(Int(zone.radius))m)")
+            } else if !isInside && wasInside && zone.notifyOnExit {
+                // 離開圍欄
+                events.append(GeofenceEvent(regionId: zone.id, type: .exit, timestamp: Date()))
+                print("[Geofence-Soft] 離開圍欄 \(zone.name) (距離: \(Int(distance))m, 半徑: \(Int(zone.radius))m)")
+            }
+            
+            zoneInsideState[zone.id] = isInside
+        }
+        
+        return events
+    }
+    
+    /// 初始化圍欄狀態（載入圍欄後呼叫，避免首次位置更新誤觸發）
+    func initializeStates(currentLocation: CLLocation?) {
+        guard let location = currentLocation else { return }
+        for zone in zones {
+            let center = CLLocation(latitude: zone.latitude, longitude: zone.longitude)
+            let distance = location.distance(from: center)
+            zoneInsideState[zone.id] = distance <= zone.radius
+        }
+        print("[Geofence-Soft] 初始化狀態: \(zoneInsideState.map { "\($0.key)=\($0.value ? "內" : "外")" })")
     }
 }

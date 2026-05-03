@@ -172,10 +172,17 @@ struct CoupleTrackerApp: App {
             handleGeofenceEvent(event)
         }
         
-        // 設定位置更新回調 — 透過 WebSocket 發送位置 + 更新 Live Activity
+        // 設定位置更新回調 — 透過 WebSocket 發送位置 + 更新 Live Activity + 軟體圍欄檢查
         locationManager.onLocationUpdate = { location in
             Task { @MainActor in
                 webSocketManager.sendLocation(location)
+                
+                // 軟體圍欄檢查（比 iOS 系統圍欄更即時）
+                let clLocation = CLLocation(latitude: location.latitude, longitude: location.longitude)
+                let events = geofenceManager.checkGeofences(location: clLocation)
+                for event in events {
+                    handleGeofenceEvent(event)
+                }
                 
                 // 更新 Live Activity（如果有對方位置）
                 if let partnerLoc = webSocketManager.partnerLocation {
@@ -204,6 +211,12 @@ struct CoupleTrackerApp: App {
             // 載入圍欄並開始監控
             Task {
                 await geofenceManager.loadZones()
+                
+                // 初始化軟體圍欄狀態（避免首次位置更新誤觸發）
+                if let currentLoc = locationManager.currentLocation {
+                    let clLoc = CLLocation(latitude: currentLoc.latitude, longitude: currentLoc.longitude)
+                    geofenceManager.initializeStates(currentLocation: clLoc)
+                }
                 
                 // Debug: 發送本地通知顯示圍欄載入狀態
                 let zoneCount = geofenceManager.zones.count
