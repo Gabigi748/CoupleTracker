@@ -125,6 +125,11 @@ struct CoupleTrackerApp: App {
             
             if apiService.isAuthenticated, let token = apiService.currentToken {
                 webSocketManager.connect(token: token)
+                
+                // 重新載入圍欄（對方可能新增了圍欄）
+                Task {
+                    await geofenceManager.loadZones()
+                }
             }
             
         case .background:
@@ -188,9 +193,17 @@ struct CoupleTrackerApp: App {
             }
         }
         
-        // 如果已登入，建立 WebSocket 連線
+        // 設定圍欄管理器的 API 參考
+        geofenceManager.configure(with: apiService)
+        
+        // 如果已登入，建立 WebSocket 連線 + 載入圍欄
         if apiService.isAuthenticated, let token = apiService.currentToken {
             webSocketManager.connect(token: token)
+            
+            // 載入圍欄並開始監控
+            Task {
+                await geofenceManager.loadZones()
+            }
         }
         
         // 啟動 Motion & Fitness 監控
@@ -221,8 +234,11 @@ struct CoupleTrackerApp: App {
     /// 處理圍欄事件
     private func handleGeofenceEvent(_ event: GeofenceEvent) {
         guard let zone = geofenceManager.zone(by: event.regionId) else {
+            print("[Geofence] 找不到圍欄 ID: \(event.regionId)，已載入 \(geofenceManager.zones.count) 個圍欄: \(geofenceManager.zones.map { $0.id })")
             return
         }
+        
+        print("[Geofence] 觸發圍欄事件: \(zone.name) - \(event.type)")
         
         // 透過 WebSocket 發送圍欄事件給後端（後端會轉發給配對對象）
         let eventType = event.type == .entry ? "entry" : "exit"
