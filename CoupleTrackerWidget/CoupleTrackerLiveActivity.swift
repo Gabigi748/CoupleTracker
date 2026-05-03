@@ -33,6 +33,7 @@ struct CoupleTrackerLiveActivity: Widget {
                         Text(formatDistance(context.state.partnerDistance))
                             .font(.caption.bold())
                             .foregroundStyle(distanceColor(context.state.partnerDistance))
+                            .contentTransition(.numericText())
                     }
                 }
                 
@@ -84,6 +85,7 @@ struct CoupleTrackerLiveActivity: Widget {
                 Text(formatDistance(context.state.partnerDistance))
                     .font(.caption2.bold())
                     .foregroundStyle(distanceColor(context.state.partnerDistance))
+                    .contentTransition(.numericText())
             } minimal: {
                 // 最小狀態
                 Text("💕")
