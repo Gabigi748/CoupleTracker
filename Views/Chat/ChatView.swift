@@ -109,6 +109,10 @@ struct ChatView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
             .onChange(of: messages.count) { _, _ in
                 // 自動滾動到最新訊息
                 if let lastMessage = messages.last {
