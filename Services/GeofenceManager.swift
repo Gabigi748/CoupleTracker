@@ -54,12 +54,17 @@ final class GeofenceManager {
         defer { isLoading = false }
         
         do {
-            guard let apiService else { return }
+            guard let apiService else {
+                print("[Geofence] loadZones: apiService 為 nil，無法載入")
+                return
+            }
             zones = try await apiService.getGeofences()
+            print("[Geofence] loadZones: 載入了 \(zones.count) 個圍欄: \(zones.map { "\($0.id):\($0.name)" })")
             // 同步監控狀態
             await syncMonitoredRegions()
         } catch {
             errorMessage = "載入圍欄失敗：\(error.localizedDescription)"
+            print("[Geofence] loadZones 失敗: \(error)")
         }
     }
     
@@ -140,8 +145,10 @@ final class GeofenceManager {
         
         // 重新監控所有圍欄
         for zone in zones {
-            _ = locationManager.startMonitoring(zone: zone)
+            let success = locationManager.startMonitoring(zone: zone)
+            print("[Geofence] 註冊監控圍欄 \(zone.id):\(zone.name) (lat:\(zone.latitude), lng:\(zone.longitude), r:\(zone.radius)m) → \(success ? "成功" : "失敗")")
         }
+        print("[Geofence] 目前監控中的圍欄數: \(locationManager.monitoredRegionsCount)")
     }
     
     // MARK: - 查詢

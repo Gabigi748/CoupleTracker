@@ -8,6 +8,7 @@ import Foundation
 import CoreLocation
 import UIKit
 import Observation
+import UserNotifications
 
 /// 定位管理器
 /// 負責所有 Core Location 相關操作：權限請求、位置更新、地理圍欄
@@ -294,6 +295,11 @@ extension LocationManager: CLLocationManagerDelegate {
     /// 進入地理圍欄
     nonisolated func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         guard let circularRegion = region as? CLCircularRegion else { return }
+        print("[Geofence] didEnterRegion: \(circularRegion.identifier)")
+        
+        // Debug: 發送本地通知確認圍欄觸發
+        sendDebugNotification(title: "圍欄觸發", body: "進入圍欄: \(circularRegion.identifier)")
+        
         let event = GeofenceEvent(
             regionId: circularRegion.identifier,
             type: .entry,
@@ -307,6 +313,11 @@ extension LocationManager: CLLocationManagerDelegate {
     /// 離開地理圍欄
     nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         guard let circularRegion = region as? CLCircularRegion else { return }
+        print("[Geofence] didExitRegion: \(circularRegion.identifier)")
+        
+        // Debug: 發送本地通知確認圍欄觸發
+        sendDebugNotification(title: "圍欄觸發", body: "離開圍欄: \(circularRegion.identifier)")
+        
         let event = GeofenceEvent(
             regionId: circularRegion.identifier,
             type: .exit,
@@ -320,9 +331,27 @@ extension LocationManager: CLLocationManagerDelegate {
     /// 圍欄監控失敗
     nonisolated func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
         let message = "圍欄監控失敗：\(error.localizedDescription)"
+        print("[Geofence] monitoringDidFail: \(region?.identifier ?? "nil") - \(error)")
+        sendDebugNotification(title: "圍欄監控失敗", body: "\(region?.identifier ?? "?") - \(error.localizedDescription)")
         Task { @MainActor in
             locationError = message
         }
+    }
+    
+    // MARK: - Debug Helper
+    
+    /// 發送 debug 本地通知（用於確認圍欄是否觸發）
+    nonisolated private func sendDebugNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 }
 
