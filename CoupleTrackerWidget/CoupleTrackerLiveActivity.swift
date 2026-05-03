@@ -39,13 +39,15 @@ struct CoupleTrackerLiveActivity: Widget {
                 
                 DynamicIslandExpandedRegion(.center) {
                     HStack(spacing: 12) {
-                        // 電量（可愛 emoji）
+                        // 電量（SF Symbol + 顏色）
                         HStack(spacing: 3) {
-                            Text(batteryEmoji(context.state.partnerBattery))
+                            Image(systemName: batteryIconName(context.state.partnerBattery))
+                                .foregroundStyle(batteryColor(context.state.partnerBattery))
                                 .font(.caption2)
                             Text("\(context.state.partnerBattery)%")
-                                .font(.caption2)
+                                .font(.caption2.bold())
                                 .foregroundStyle(batteryColor(context.state.partnerBattery))
+                                .contentTransition(.numericText())
                         }
                         
                         // 移動狀態（可愛 emoji）
