@@ -18,11 +18,9 @@ struct CoupleTrackerLiveActivity: Widget {
                 // 靈動島展開狀態（Expanded）
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 4) {
-                        // 可愛像素貓（根據移動狀態切換）
-                        Image(catImageName(activity: context.state.partnerActivity, stationarySince: context.state.stationarySince))
-                            .resizable()
-                            .interpolation(.none)
-                            .frame(width: 28, height: 28)
+                        Image(systemName: "heart.fill")
+                            .foregroundStyle(.pink)
+                            .font(.caption)
                         Text(context.state.partnerName)
                             .font(.caption.bold())
                             .lineLimit(1)
@@ -80,12 +78,11 @@ struct CoupleTrackerLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                // 靈動島緊湊狀態 — 左邊：像素貓 + 對方名字
-                HStack(spacing: 2) {
-                    Image(catImageName(activity: context.state.partnerActivity, stationarySince: context.state.stationarySince))
-                        .resizable()
-                        .interpolation(.none)
-                        .frame(width: 20, height: 20)
+                // 靈動島緊湊狀態 — 左邊：愛心 + 對方名字
+                HStack(spacing: 3) {
+                    Image(systemName: "heart.fill")
+                        .foregroundStyle(.pink)
+                        .font(.caption2)
                     Text(context.state.partnerName)
                         .font(.caption2.bold())
                         .lineLimit(1)
@@ -97,11 +94,10 @@ struct CoupleTrackerLiveActivity: Widget {
                     .foregroundStyle(distanceColor(context.state.partnerDistance))
                     .contentTransition(.numericText())
             } minimal: {
-                // 最小狀態 — 像素貓
-                Image(catImageName(activity: context.state.partnerActivity, stationarySince: context.state.stationarySince))
-                    .resizable()
-                    .interpolation(.none)
-                    .frame(width: 22, height: 22)
+                // 最小狀態
+                Image(systemName: "heart.fill")
+                    .foregroundStyle(.pink)
+                    .font(.caption)
             }
         }
     }
