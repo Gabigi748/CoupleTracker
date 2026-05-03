@@ -17,16 +17,9 @@ router.get('/', auth, async (req, res) => {
     const [users] = await db.query('SELECT partner_id FROM users WHERE id = ?', [req.userId]);
     const partnerId = users[0].partner_id;
 
-    // 查詢自己和配對對象的圍欄
-    let sql = 'SELECT * FROM geofences WHERE user_id = ?';
+    // 只查詢自己的圍欄（對方的圍欄由對方手機監控）
+    const sql = 'SELECT * FROM geofences WHERE user_id = ? ORDER BY created_at DESC';
     const params = [req.userId];
-
-    if (partnerId) {
-      sql += ' OR user_id = ?';
-      params.push(partnerId);
-    }
-
-    sql += ' ORDER BY created_at DESC';
 
     const [rows] = await db.query(sql, params);
 
