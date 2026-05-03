@@ -30,8 +30,16 @@ enum CoordinateConverter {
     ///   - lng: 經度（WGS-84）
     /// - Returns: 是否在中國境內
     static func isInsideChina(lat: Double, lng: Double) -> Bool {
-        // 中國大致範圍：緯度 0.8293~55.8271，經度 72.004~137.8347
-        return lng >= 72.004 && lng <= 137.8347 && lat >= 0.8293 && lat <= 55.8271
+        // 中國大陸大致範圍（排除台灣、港澳不需要排除因為也用 GCJ-02）
+        // 基本範圍檢查
+        guard lng >= 72.004 && lng <= 137.8347 && lat >= 0.8293 && lat <= 55.8271 else {
+            return false
+        }
+        // 排除台灣（緯度 21.5~26, 經度 119.5~122.5）
+        if lat >= 21.5 && lat <= 26.0 && lng >= 119.5 && lng <= 122.5 {
+            return false
+        }
+        return true
     }
     
     /// WGS-84 座標轉 GCJ-02 座標
