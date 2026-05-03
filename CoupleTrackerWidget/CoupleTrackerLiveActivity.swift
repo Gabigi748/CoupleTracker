@@ -50,12 +50,14 @@ struct CoupleTrackerLiveActivity: Widget {
                                 .contentTransition(.numericText())
                         }
                         
-                        // 移動狀態（可愛 emoji）
+                        // 移動狀態（SF Symbol + 文字）
                         HStack(spacing: 3) {
-                            Text(activityEmoji(context.state.partnerActivity))
+                            Image(systemName: activityIcon(context.state.partnerActivity))
+                                .foregroundStyle(activityColor(context.state.partnerActivity))
                                 .font(.caption2)
                             Text(activityText(context.state.partnerActivity))
-                                .font(.caption2)
+                                .font(.caption2.bold())
+                                .foregroundStyle(activityColor(context.state.partnerActivity))
                         }
                     }
                 }
@@ -214,6 +216,18 @@ struct CoupleTrackerLiveActivity: Widget {
         case "driving": return "🚗"
         case "stationary": return "🧍"
         default: return "❓"
+        }
+    }
+    
+    /// 移動狀態顏色
+    private func activityColor(_ activity: String) -> Color {
+        switch activity {
+        case "walking": return .green
+        case "running": return .orange
+        case "cycling": return .cyan
+        case "driving": return .blue
+        case "stationary": return .secondary
+        default: return .secondary
         }
     }
     
