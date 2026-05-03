@@ -85,6 +85,9 @@ jobs:
                   MARKETING_VERSION: "1.0.0"
                   CURRENT_PROJECT_VERSION: "1"
                   SWIFT_VERSION: "6.0"
+              dependencies:
+                - target: CoupleTrackerWidget
+                  embed: true
             CoupleTrackerWidget:
               type: app-extension
               platform: iOS
@@ -105,9 +108,7 @@ jobs:
                   CODE_SIGN_IDENTITY: ""
                   CODE_SIGNING_REQUIRED: "NO"
                   CODE_SIGNING_ALLOWED: "NO"
-              dependencies:
-                - target: CoupleTracker
-                  embed: false
+              dependencies: []
           EOF
           
           brew install xcodegen
