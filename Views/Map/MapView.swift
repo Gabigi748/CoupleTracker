@@ -34,14 +34,11 @@ struct MapView: View {
     @Environment(WebSocketManager.self) private var webSocketManager
     @Environment(APIService.self) private var apiService
     
-    // 自己的位置座標（中國設備自動套用 GCJ-02 轉換）
+    // 自己的位置座標（直接使用，不做轉換）
+    // 注意：CLLocationManager 在中國設備上回傳的座標已經是 GCJ-02，
+    // MapKit 在中國設備上也用 GCJ-02，所以不需要手動轉換自己的位置
     private var myLocation: CLLocationCoordinate2D? {
-        guard let coord = locationManager.currentLocation?.coordinate else { return nil }
-        if CoordinateConverter.isDeviceInChina {
-            let converted = CoordinateConverter.wgs84ToGcj02(lat: coord.latitude, lng: coord.longitude)
-            return CLLocationCoordinate2D(latitude: converted.lat, longitude: converted.lng)
-        }
-        return coord
+        locationManager.currentLocation?.coordinate
     }
     
     // 自己的定位精度（公尺）
