@@ -270,6 +270,10 @@ extension LocationManager: CLLocationManagerDelegate {
             }
             
             currentLocation = location
+            
+            // 更新 CoordinateConverter 的最後已知座標（用於判斷是否在中國）
+            CoordinateConverter.lastKnownCoordinate = (lat: location.latitude, lng: location.longitude)
+            
             onLocationUpdate?(location)
             
             // 給 WebSocket 發送一點時間，然後結束背景任務

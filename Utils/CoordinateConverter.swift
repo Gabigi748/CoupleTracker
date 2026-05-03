@@ -93,14 +93,23 @@ enum CoordinateConverter {
     
     // MARK: - 判斷設備是否在中國地區
     
-    /// 判斷設備是否在中國地區（基於系統地區設定）
+    /// 判斷設備是否在中國地區
     /// MapKit 在中國地區設備上使用高德地圖（GCJ-02 座標系）
+    /// 判斷依據：系統地區設定為 CN，或最後已知 GPS 座標在中國境內
     static var isDeviceInChina: Bool {
-        if let regionCode = Locale.current.region?.identifier {
-            return regionCode == "CN"
+        // 先看系統地區設定
+        if let regionCode = Locale.current.region?.identifier, regionCode == "CN" {
+            return true
+        }
+        // 再看最後已知的 GPS 座標
+        if let coord = lastKnownCoordinate {
+            return isInsideChina(lat: coord.lat, lng: coord.lng)
         }
         return false
     }
+    
+    /// 最後已知的 GPS 座標（由 LocationManager 更新）
+    static var lastKnownCoordinate: (lat: Double, lng: Double)?
     
     // MARK: - 私有方法
     
