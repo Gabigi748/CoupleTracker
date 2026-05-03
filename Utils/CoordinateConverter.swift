@@ -109,7 +109,7 @@ enum CoordinateConverter {
     }
     
     /// 最後已知的 GPS 座標（由 LocationManager 更新）
-    static var lastKnownCoordinate: (lat: Double, lng: Double)?
+    nonisolated(unsafe) static var lastKnownCoordinate: (lat: Double, lng: Double)?
     
     // MARK: - 私有方法
     
