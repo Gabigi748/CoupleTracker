@@ -403,36 +403,53 @@ final class APIService {
     /// 取得配對對象的最新位置（用於 App 回到前景時快速恢復距離顯示）
     /// - Returns: 對方最新位置，如果沒有則回傳 nil
     func fetchPartnerLatestLocation() async throws -> Location? {
-        struct PartnerLocationResponse: Decodable {
-            let success: Bool
-            let data: PartnerLocationData?
-        }
-        struct PartnerLocationData: Decodable {
-            let lat: Double
-            let lng: Double
-            let accuracy: Double?
-            let battery: Int?
-            let created_at: String
+        guard let url = URL(string: baseURL + "/api/locations/partner-latest") else {
+            throw CoupleTrackerError.invalidURL
         }
         
-        let response: PartnerLocationResponse = try await request(
-            method: "GET",
-            path: "/api/locations/partner-latest"
-        )
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "GET"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         
-        guard let data = response.data else { return nil }
+        let (data, response) = try await session.data(for: urlRequest)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            return nil
+        }
+        
+        // 手動解析，因為 data 可能是 null
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let success = json["success"] as? Bool, success,
+              let locData = json["data"] as? [String: Any] else {
+            return nil
+        }
+        
+        guard let lat = locData["lat"] as? Double,
+              let lng = locData["lng"] as? Double else {
+            return nil
+        }
+        
+        let accuracy = locData["accuracy"] as? Double
         
         let timestamp: Date
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        timestamp = formatter.date(from: data.created_at)
-            ?? ISO8601DateFormatter().date(from: data.created_at)
-            ?? Date()
+        if let dateStr = locData["created_at"] as? String {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            timestamp = formatter.date(from: dateStr)
+                ?? ISO8601DateFormatter().date(from: dateStr)
+                ?? Date()
+        } else {
+            timestamp = Date()
+        }
         
         return Location(
-            latitude: data.lat,
-            longitude: data.lng,
-            accuracy: data.accuracy,
+            latitude: lat,
+            longitude: lng,
+            accuracy: accuracy,
             timestamp: timestamp
         )
     }
