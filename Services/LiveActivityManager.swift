@@ -71,19 +71,13 @@ final class LiveActivityManager {
     /// 開始 Live Activity
     func startLiveActivity(myName: String, partnerName: String) {
         guard isActivityKitAvailable() else {
-            print("⚠️ ActivityKit 不可用，跳過 Live Activity")
+            print("[LiveActivity] ActivityKit 不可用，跳過")
             return
         }
         
         // 延遲啟動，避免在 App 初始化階段就存取 ActivityKit
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            
-            // 再次確認 App 在前景
-            guard UIApplication.shared.applicationState == .active else {
-                print("⚠️ App 不在前景，跳過 Live Activity")
-                return
-            }
+            try? await Task.sleep(for: .seconds(1))
             
             self.doStartLiveActivity(myName: myName, partnerName: partnerName)
         }
@@ -94,7 +88,8 @@ final class LiveActivityManager {
         partnerName: String,
         distance: Double,
         battery: Int,
-        activity: String
+        activity: String,
+        charging: Bool = false
     ) {
         // 如果沒有活躍的 Activity，直接返回（不碰 ActivityKit）
         guard isActivityActive else { return }
@@ -116,6 +111,7 @@ final class LiveActivityManager {
             partnerDistance: distance,
             partnerBattery: battery,
             partnerActivity: activity,
+            partnerCharging: charging,
             lastUpdateTime: Date(),
             stationarySince: stationarySince
         )
@@ -134,30 +130,10 @@ final class LiveActivityManager {
         restartTimer?.invalidate()
         restartTimer = nil
         
-        guard isActivityActive else { return }
-        
-        let finalState = CoupleTrackerAttributes.ContentState(
-            partnerName: "",
-            partnerDistance: 0,
-            partnerBattery: 0,
-            partnerActivity: "unknown",
-            lastUpdateTime: Date(),
-            stationarySince: nil
-        )
-        
-        let content = ActivityContent(state: finalState, staleDate: nil)
-        
-        Task.detached {
-            for activity in Activity<CoupleTrackerAttributes>.activities {
-                await activity.end(content, dismissalPolicy: .immediate)
-            }
-        }
-        
-        currentActivityId = nil
-        isActivityActive = false
+        cleanupAllActivities()
         activityStartTime = nil
         
-        print("🛑 Live Activity 已結束")
+        print("[LiveActivity] 已結束")
     }
     
     // MARK: - 私有方法
@@ -167,45 +143,105 @@ final class LiveActivityManager {
         // 安全檢查 areActivitiesEnabled
         let authInfo = ActivityAuthorizationInfo()
         guard authInfo.areActivitiesEnabled else {
-            print("⚠️ Live Activities 未啟用")
+            print("[LiveActivity] Live Activities 未啟用")
             return
         }
         
-        // 如果已有活躍的 Activity，先結束
-        if isActivityActive {
-            endLiveActivity()
-        }
+        // 清理所有舊的 Activity（避免疊加）
+        cleanupAllActivities()
         
-        let attributes = CoupleTrackerAttributes(myName: myName)
-        let initialState = CoupleTrackerAttributes.ContentState(
-            partnerName: partnerName,
-            partnerDistance: 0,
-            partnerBattery: -1,
-            partnerActivity: "unknown",
-            lastUpdateTime: Date(),
-            stationarySince: nil
-        )
-        
-        let content = ActivityContent(state: initialState, staleDate: nil)
-        
-        do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: content,
-                pushType: nil
+        // 等一下讓舊的完全結束
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            
+            let attributes = CoupleTrackerAttributes(myName: myName)
+            let initialState = CoupleTrackerAttributes.ContentState(
+                partnerName: partnerName,
+                partnerDistance: 0,
+                partnerBattery: -1,
+                partnerActivity: "unknown",
+                partnerCharging: false,
+                lastUpdateTime: Date(),
+                stationarySince: nil
             )
-            currentActivityId = activity.id
-            isActivityActive = true
-            activityStartTime = Date()
             
-            // 設定 8 小時自動重啟
-            scheduleRestart(myName: myName, partnerName: partnerName)
+            let content = ActivityContent(state: initialState, staleDate: nil)
             
-            print("✅ Live Activity 已啟動：\(activity.id)")
-        } catch {
-            print("❌ Live Activity 啟動失敗：\(error.localizedDescription)")
-            // 標記為不可用，避免反覆嘗試
-            activityKitAvailable = false
+            do {
+                let activity = try Activity.request(
+                    attributes: attributes,
+                    content: content,
+                    pushType: nil
+                )
+                self.currentActivityId = activity.id
+                self.isActivityActive = true
+                self.activityStartTime = Date()
+                
+                // 設定 8 小時自動重啟
+                self.scheduleRestart(myName: myName, partnerName: partnerName)
+                
+                // 監聽 Activity 狀態變化（被滑掉時自動重啟）
+                self.observeActivityState(activity, myName: myName, partnerName: partnerName)
+                
+                print("[LiveActivity] 已啟動：\(activity.id)")
+            } catch {
+                print("[LiveActivity] 啟動失敗：\(error.localizedDescription)")
+                self.activityKitAvailable = false
+            }
+        }
+    }
+    
+    /// 清理所有舊的 Live Activity
+    private func cleanupAllActivities() {
+        Task.detached {
+            for activity in Activity<CoupleTrackerAttributes>.activities {
+                let finalState = CoupleTrackerAttributes.ContentState(
+                    partnerName: "",
+                    partnerDistance: 0,
+                    partnerBattery: 0,
+                    partnerActivity: "unknown",
+                    partnerCharging: false,
+                    lastUpdateTime: Date(),
+                    stationarySince: nil
+                )
+                let content = ActivityContent(state: finalState, staleDate: nil)
+                await activity.end(content, dismissalPolicy: .immediate)
+            }
+        }
+        currentActivityId = nil
+        isActivityActive = false
+    }
+    
+    /// 監聽 Activity 狀態變化，被使用者滑掉時自動重啟
+    private func observeActivityState(
+        _ activity: Activity<CoupleTrackerAttributes>,
+        myName: String,
+        partnerName: String
+    ) {
+        Task { @MainActor in
+            for await state in activity.activityStateUpdates {
+                switch state {
+                case .dismissed:
+                    print("[LiveActivity] 被使用者滑掉，3 秒後重啟")
+                    self.isActivityActive = false
+                    self.currentActivityId = nil
+                    try? await Task.sleep(for: .seconds(3))
+                    // 只在 App 還在前景時重啟
+                    if UIApplication.shared.applicationState == .active {
+                        self.doStartLiveActivity(myName: myName, partnerName: partnerName)
+                    }
+                    return
+                case .ended:
+                    print("[LiveActivity] 已結束")
+                    self.isActivityActive = false
+                    self.currentActivityId = nil
+                    return
+                case .active, .stale:
+                    break
+                @unknown default:
+                    break
+                }
+            }
         }
     }
     

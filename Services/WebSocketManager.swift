@@ -57,6 +57,9 @@ final class WebSocketManager {
     /// 對方移動狀態
     var partnerActivity: String = "unknown"
     
+    /// 對方是否在充電
+    var partnerCharging: Bool = false
+    
     // MARK: - 私有屬性
     
     /// WebSocket 連線
@@ -127,10 +130,13 @@ final class WebSocketManager {
     /// 發送位置更新
     /// - Parameter location: 當前位置
     func sendLocation(_ location: Location) {
-        // 後端期望格式：{"type":"location","lat":...,"lng":...,"accuracy":...,"battery":...,"timestamp":...,"in_china":...}
+        // 後端期望格式：{"type":"location","lat":...,"lng":...,"accuracy":...,"battery":...,"charging":...,"timestamp":...,"in_china":...}
         let battery = UIDevice.current.batteryLevel >= 0
             ? Int(UIDevice.current.batteryLevel * 100)
             : -1
+        
+        let batteryState = UIDevice.current.batteryState
+        let charging = (batteryState == .charging || batteryState == .full)
         
         // 附帶 in_china 標記，讓接收端判斷是否需要座標轉換
         let inChina = CoordinateConverter.isInsideChina(lat: location.latitude, lng: location.longitude)
@@ -141,6 +147,7 @@ final class WebSocketManager {
             "lng": location.longitude,
             "accuracy": location.accuracy ?? 10.0,
             "battery": battery,
+            "charging": charging,
             "timestamp": ISO8601DateFormatter().string(from: location.timestamp),
             "in_china": inChina
         ]
@@ -448,6 +455,11 @@ final class WebSocketManager {
         if let battery = json["battery"] as? Int, battery >= 0 {
             partnerBattery = battery
         }
+        
+        // 更新對方充電狀態
+        if let charging = json["charging"] as? Bool {
+            partnerCharging = charging
+        }
     }
     
     /// 處理聊天訊息
@@ -522,6 +534,13 @@ final class WebSocketManager {
             timestamp = ISO8601DateFormatter().date(from: timestampStr) ?? Date()
         } else {
             timestamp = Date()
+        }
+        
+        // 去重：如果跟上一次事件相同（同樣的開/關狀態），且間隔 < 5 秒，跳過
+        if let lastEvent = partnerScreenEvent,
+           lastEvent.screenOn == screenOn,
+           abs(timestamp.timeIntervalSince(lastEvent.timestamp)) < 5 {
+            return
         }
         
         partnerScreenEvent = ScreenEvent(screenOn: screenOn, timestamp: timestamp)

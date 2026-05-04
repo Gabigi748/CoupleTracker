@@ -22,6 +22,8 @@ struct CoupleTrackerAttributes: ActivityAttributes {
         var partnerBattery: Int
         /// 對方移動狀態（"walking", "driving", "stationary" 等）
         var partnerActivity: String
+        /// 對方是否在充電
+        var partnerCharging: Bool
         /// 最後更新時間
         var lastUpdateTime: Date
         /// 開始靜止的時間（用於判斷是否超過 3 小時顯示睡覺貓）
@@ -32,6 +34,7 @@ struct CoupleTrackerAttributes: ActivityAttributes {
             case partnerDistance
             case partnerBattery
             case partnerActivity
+            case partnerCharging
             case lastUpdateTime
             case stationarySince
         }

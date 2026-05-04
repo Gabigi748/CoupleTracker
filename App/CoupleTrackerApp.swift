@@ -138,10 +138,14 @@ struct CoupleTrackerApp: App {
                 
                 // 主動拉一次對方最新位置（避免 WebSocket 斷線期間沒有對方位置）
                 Task {
-                    if let partnerLoc = try? await apiService.fetchPartnerLatestLocation() {
+                    if let result = try? await apiService.fetchPartnerLatestLocation() {
                         // 只在 WebSocket 還沒收到對方位置時才用 API 的資料
                         if webSocketManager.partnerLocation == nil {
-                            webSocketManager.partnerLocation = partnerLoc
+                            webSocketManager.partnerLocation = result.location
+                        }
+                        // 電量也更新（如果 WebSocket 還沒收到）
+                        if let battery = result.battery, battery >= 0, webSocketManager.partnerBattery == nil {
+                            webSocketManager.partnerBattery = battery
                         }
                     }
                 }
@@ -209,7 +213,8 @@ struct CoupleTrackerApp: App {
                         partnerName: partnerName,
                         distance: distance,
                         battery: webSocketManager.partnerBattery ?? -1,
-                        activity: webSocketManager.partnerActivity
+                        activity: webSocketManager.partnerActivity,
+                        charging: webSocketManager.partnerCharging
                     )
                 }
             }
@@ -235,9 +240,12 @@ struct CoupleTrackerApp: App {
             
             // 啟動時也拉一次對方最新位置（WebSocket 連上前就能顯示距離）
             Task {
-                if let partnerLoc = try? await apiService.fetchPartnerLatestLocation() {
+                if let result = try? await apiService.fetchPartnerLatestLocation() {
                     if webSocketManager.partnerLocation == nil {
-                        webSocketManager.partnerLocation = partnerLoc
+                        webSocketManager.partnerLocation = result.location
+                    }
+                    if let battery = result.battery, battery >= 0, webSocketManager.partnerBattery == nil {
+                        webSocketManager.partnerBattery = battery
                     }
                 }
             }
@@ -376,7 +384,8 @@ struct ContentView: View {
                 partnerName: partnerName,
                 distance: distance,
                 battery: webSocketManager.partnerBattery ?? -1,
-                activity: webSocketManager.partnerActivity
+                activity: webSocketManager.partnerActivity,
+                charging: webSocketManager.partnerCharging
             )
         }
     }

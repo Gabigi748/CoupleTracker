@@ -99,13 +99,13 @@ final class NotificationService: NSObject {
     ///   - partnerName: 對方名稱
     func sendGeofenceEntryNotification(zoneName: String, partnerName: String) {
         let content = UNMutableNotificationContent()
-        content.title = "📍 到達通知"
+        content.title = "到達通知"
         content.body = "\(partnerName) 已到達「\(zoneName)」"
         content.sound = .default
         content.categoryIdentifier = "GEOFENCE_EVENT"
         
         let request = UNNotificationRequest(
-            identifier: "geofence_entry_\(UUID().uuidString)",
+            identifier: "geofence_entry_\(zoneName)",
             content: content,
             trigger: nil // 立即發送
         )
@@ -125,13 +125,13 @@ final class NotificationService: NSObject {
     ///   - partnerName: 對方名稱
     func sendGeofenceExitNotification(zoneName: String, partnerName: String) {
         let content = UNMutableNotificationContent()
-        content.title = "📍 離開通知"
+        content.title = "離開通知"
         content.body = "\(partnerName) 已離開「\(zoneName)」"
         content.sound = .default
         content.categoryIdentifier = "GEOFENCE_EVENT"
         
         let request = UNNotificationRequest(
-            identifier: "geofence_exit_\(UUID().uuidString)",
+            identifier: "geofence_exit_\(zoneName)",
             content: content,
             trigger: nil
         )
@@ -180,18 +180,19 @@ final class NotificationService: NSObject {
         let content = UNMutableNotificationContent()
         
         if screenOn {
-            content.title = "📱 螢幕開啟"
+            content.title = "螢幕開啟"
             content.body = "\(partnerName) 開啟了螢幕"
         } else {
-            content.title = "📴 螢幕關閉"
+            content.title = "螢幕關閉"
             content.body = "\(partnerName) 關閉了螢幕"
         }
         
         content.sound = .default
         content.categoryIdentifier = "SCREEN_STATUS"
         
+        // 用固定 ID，新通知會取代舊的，避免重複
         let request = UNNotificationRequest(
-            identifier: "screen_\(UUID().uuidString)",
+            identifier: "screen_\(screenOn ? "on" : "off")",
             content: content,
             trigger: nil
         )

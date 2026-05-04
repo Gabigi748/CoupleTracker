@@ -401,8 +401,8 @@ final class APIService {
     // MARK: - 對方最新位置
     
     /// 取得配對對象的最新位置（用於 App 回到前景時快速恢復距離顯示）
-    /// - Returns: 對方最新位置，如果沒有則回傳 nil
-    func fetchPartnerLatestLocation() async throws -> Location? {
+    /// - Returns: (位置, 電量) 的 tuple，如果沒有則回傳 nil
+    func fetchPartnerLatestLocation() async throws -> (location: Location, battery: Int?)? {
         guard let url = URL(string: baseURL + "/api/locations/partner-latest") else {
             throw CoupleTrackerError.invalidURL
         }
@@ -434,6 +434,7 @@ final class APIService {
         }
         
         let accuracy = locData["accuracy"] as? Double
+        let battery = locData["battery"] as? Int
         
         let timestamp: Date
         if let dateStr = locData["created_at"] as? String {
@@ -446,12 +447,14 @@ final class APIService {
             timestamp = Date()
         }
         
-        return Location(
+        let location = Location(
             latitude: lat,
             longitude: lng,
             timestamp: timestamp,
             accuracy: accuracy
         )
+        
+        return (location: location, battery: battery)
     }
     
     // MARK: - Token 存取

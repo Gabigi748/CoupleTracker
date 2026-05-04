@@ -341,6 +341,13 @@ struct MapView: View {
                         Text("\(partnerBattery)%")
                             .font(.subheadline)
                             .foregroundStyle(batteryColor)
+                        
+                        // 充電指示
+                        if webSocketManager.partnerCharging {
+                            Image(systemName: "bolt.fill")
+                                .font(.caption)
+                                .foregroundStyle(.yellow)
+                        }
                     }
                 } else {
                     Text("電量未知")
@@ -445,10 +452,11 @@ struct MapView: View {
         defer { isRefreshing = false }
         
         do {
-            if let location = try await apiService.fetchPartnerLatestLocation() {
-                webSocketManager.partnerLocation = location
-                // 如果有電量資訊也更新
-                // battery 從 locations 表拿，可能是 nil
+            if let result = try await apiService.fetchPartnerLatestLocation() {
+                webSocketManager.partnerLocation = result.location
+                if let battery = result.battery, battery >= 0 {
+                    webSocketManager.partnerBattery = battery
+                }
             }
         } catch {
             print("[MapView] 刷新對方位置失敗: \(error)")

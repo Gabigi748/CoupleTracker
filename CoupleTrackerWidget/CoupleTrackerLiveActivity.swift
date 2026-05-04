@@ -50,6 +50,11 @@ struct CoupleTrackerLiveActivity: Widget {
                                 .font(.caption2.bold())
                                 .foregroundStyle(batteryColor(context.state.partnerBattery))
                                 .contentTransition(.numericText())
+                            if context.state.partnerCharging {
+                                Image(systemName: "bolt.fill")
+                                    .foregroundStyle(.yellow)
+                                    .font(.system(size: 8))
+                            }
                         }
                         
                         // 移動狀態文字
@@ -137,6 +142,11 @@ struct CoupleTrackerLiveActivity: Widget {
                     Text("\(context.state.partnerBattery)%")
                         .font(.subheadline)
                         .foregroundStyle(batteryColor(context.state.partnerBattery))
+                    if context.state.partnerCharging {
+                        Image(systemName: "bolt.fill")
+                            .foregroundStyle(.yellow)
+                            .font(.caption)
+                    }
                 }
                 
                 // 移動狀態
