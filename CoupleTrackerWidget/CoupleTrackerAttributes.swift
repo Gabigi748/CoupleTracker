@@ -14,6 +14,7 @@ struct CoupleTrackerAttributes: ActivityAttributes {
         var partnerDistance: Double
         var partnerBattery: Int
         var partnerActivity: String
+        var partnerCharging: Bool
         var lastUpdateTime: Date
         var stationarySince: Date?
         
@@ -22,6 +23,7 @@ struct CoupleTrackerAttributes: ActivityAttributes {
             case partnerDistance
             case partnerBattery
             case partnerActivity
+            case partnerCharging
             case lastUpdateTime
             case stationarySince
         }
