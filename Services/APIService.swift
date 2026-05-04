@@ -449,8 +449,8 @@ final class APIService {
         return Location(
             latitude: lat,
             longitude: lng,
-            accuracy: accuracy,
-            timestamp: timestamp
+            timestamp: timestamp,
+            accuracy: accuracy
         )
     }
     
