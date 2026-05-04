@@ -139,17 +139,12 @@ final class GeofenceManager {
     
     // MARK: - 監控同步
     
-    /// 同步 Core Location 監控的圍欄與後端的圍欄列表
+    /// 同步圍欄狀態（僅使用軟體圍欄，不再註冊 iOS 系統圍欄）
+    /// iOS 系統圍欄在 GPS 漂移時容易誤觸發，改用軟體圍欄 + 遲滯區更穩定
     private func syncMonitoredRegions() async {
-        // 先停止所有監控
+        // 停止所有 iOS 系統圍欄監控（我們只用軟體圍欄）
         locationManager.stopAllMonitoring()
-        
-        // 重新監控所有圍欄
-        for zone in zones {
-            let success = locationManager.startMonitoring(zone: zone)
-            print("[Geofence] 註冊監控圍欄 \(zone.id):\(zone.name) (lat:\(zone.latitude), lng:\(zone.longitude), r:\(zone.radius)m) → \(success ? "成功" : "失敗")")
-        }
-        print("[Geofence] 目前監控中的圍欄數: \(locationManager.monitoredRegionsCount)")
+        print("[Geofence] 已停用 iOS 系統圍欄，使用軟體圍欄（\(zones.count) 個）: \(zones.map { "\($0.id):\($0.name)" })")
     }
     
     // MARK: - 查詢
@@ -171,27 +166,69 @@ final class GeofenceManager {
     /// 每個圍欄的上次狀態（true = 在圍欄內）
     private var zoneInsideState: [String: Bool] = [:]
     
+    /// 遲滯緩衝區（公尺）— 防止在圍欄邊緣因 GPS 漂移反覆觸發進出事件
+    /// 進入判定：距離 <= radius（正常）
+    /// 離開判定：距離 > radius + hysteresis（需要多走一段才算離開）
+    private let hysteresisBuffer: Double = 30
+    
+    /// 每個圍欄的上次事件時間（防止短時間內重複觸發）
+    private var lastEventTime: [String: Date] = [:]
+    
+    /// 最小事件間隔（秒）— 同一圍欄兩次事件之間至少間隔這麼久
+    private let minEventInterval: TimeInterval = 120
+    
     /// 根據當前位置手動檢查所有圍欄的進出狀態
     /// 每次位置更新時呼叫，比 iOS 系統圍欄更即時
+    /// 使用遲滯區（hysteresis）防止邊緣反覆觸發
     /// - Parameter location: 當前位置
     /// - Returns: 觸發的圍欄事件列表
     func checkGeofences(location: CLLocation) -> [GeofenceEvent] {
         var events: [GeofenceEvent] = []
         
+        // 過濾精度太差的位置（> 50m 不做圍欄判定，避免誤觸發）
+        if location.horizontalAccuracy > 50 || location.horizontalAccuracy < 0 {
+            print("[Geofence-Soft] 位置精度太差（\(Int(location.horizontalAccuracy))m），跳過圍欄檢查")
+            return events
+        }
+        
+        let now = Date()
+        
         for zone in zones {
             let center = CLLocation(latitude: zone.latitude, longitude: zone.longitude)
             let distance = location.distance(from: center)
-            let isInside = distance <= zone.radius
             let wasInside = zoneInsideState[zone.id] ?? false
             
+            // 遲滯判定：
+            // - 進入：距離 <= radius
+            // - 離開：距離 > radius + hysteresisBuffer
+            // - 在 radius ~ radius+hysteresis 之間：維持上一次狀態（不觸發事件）
+            let isInside: Bool
+            if wasInside {
+                // 之前在裡面，要超過 radius + buffer 才算離開
+                isInside = distance <= (zone.radius + hysteresisBuffer)
+            } else {
+                // 之前在外面，要進入 radius 才算進入
+                isInside = distance <= zone.radius
+            }
+            
+            // 檢查是否需要觸發事件
             if isInside && !wasInside && zone.notifyOnEntry {
-                // 進入圍欄
-                events.append(GeofenceEvent(regionId: zone.id, type: .entry, timestamp: Date()))
-                print("[Geofence-Soft] 進入圍欄 \(zone.name) (距離: \(Int(distance))m, 半徑: \(Int(zone.radius))m)")
+                // 檢查最小事件間隔
+                if let lastTime = lastEventTime[zone.id], now.timeIntervalSince(lastTime) < minEventInterval {
+                    print("[Geofence-Soft] 圍欄 \(zone.name) 事件間隔太短（\(Int(now.timeIntervalSince(lastTime)))s），跳過")
+                } else {
+                    events.append(GeofenceEvent(regionId: zone.id, type: .entry, timestamp: now))
+                    lastEventTime[zone.id] = now
+                    print("[Geofence-Soft] 進入圍欄 \(zone.name) (距離: \(Int(distance))m, 半徑: \(Int(zone.radius))m, 精度: \(Int(location.horizontalAccuracy))m)")
+                }
             } else if !isInside && wasInside && zone.notifyOnExit {
-                // 離開圍欄
-                events.append(GeofenceEvent(regionId: zone.id, type: .exit, timestamp: Date()))
-                print("[Geofence-Soft] 離開圍欄 \(zone.name) (距離: \(Int(distance))m, 半徑: \(Int(zone.radius))m)")
+                if let lastTime = lastEventTime[zone.id], now.timeIntervalSince(lastTime) < minEventInterval {
+                    print("[Geofence-Soft] 圍欄 \(zone.name) 事件間隔太短（\(Int(now.timeIntervalSince(lastTime)))s），跳過")
+                } else {
+                    events.append(GeofenceEvent(regionId: zone.id, type: .exit, timestamp: now))
+                    lastEventTime[zone.id] = now
+                    print("[Geofence-Soft] 離開圍欄 \(zone.name) (距離: \(Int(distance))m, 半徑+緩衝: \(Int(zone.radius + hysteresisBuffer))m, 精度: \(Int(location.horizontalAccuracy))m)")
+                }
             }
             
             zoneInsideState[zone.id] = isInside

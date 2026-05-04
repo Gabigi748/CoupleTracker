@@ -90,6 +90,9 @@ struct CoupleTrackerApp: App {
     /// 場景階段（前景/背景/非活躍）
     @Environment(\.scenePhase) private var scenePhase
     
+    /// 追蹤 App 是否在前景（用於決定是否發本地通知）
+    @State private var isInForeground: Bool = true
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -105,6 +108,7 @@ struct CoupleTrackerApp: App {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     handleScenePhaseChange(newPhase)
+                    isInForeground = (newPhase == .active)
                 }
         }
     }
@@ -217,21 +221,6 @@ struct CoupleTrackerApp: App {
                     let clLoc = CLLocation(latitude: currentLoc.latitude, longitude: currentLoc.longitude)
                     geofenceManager.initializeStates(currentLocation: clLoc)
                 }
-                
-                // Debug: 發送本地通知顯示圍欄載入狀態
-                let zoneCount = geofenceManager.zones.count
-                let zoneNames = geofenceManager.zones.map { $0.name }.joined(separator: ", ")
-                let monitoredCount = locationManager.monitoredRegionsCount
-                let authStatus = locationManager.authorizationStatusValue
-                // authStatus: 0=notDetermined, 1=restricted, 2=denied, 3=authorizedAlways, 4=authorizedWhenInUse
-                let debugMsg = "圍欄: \(zoneCount)個[\(zoneNames)] 監控中: \(monitoredCount)個 定位權限: \(authStatus)"
-                
-                let content = UNMutableNotificationContent()
-                content.title = "[Debug] 圍欄狀態"
-                content.body = debugMsg
-                content.sound = .default
-                let request = UNNotificationRequest(identifier: "geofence-debug-\(Date().timeIntervalSince1970)", content: content, trigger: nil)
-                try? await UNUserNotificationCenter.current().add(request)
             }
         }
         
@@ -295,6 +284,7 @@ struct ContentView: View {
     @Environment(NotificationService.self) private var notificationService
     @Environment(LocationManager.self) private var locationManager
     @Environment(LiveActivityManager.self) private var liveActivityManager
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some View {
         Group {
@@ -326,24 +316,32 @@ struct ContentView: View {
         }
         .onChange(of: webSocketManager.partnerScreenEvent) { _, event in
             guard let event else { return }
-            let partnerName = apiService.partnerUser?.name ?? "對方"
-            notificationService.sendScreenStatusNotification(
-                partnerName: partnerName,
-                screenOn: event.screenOn
-            )
+            // 只在 App 不在前景時發本地通知
+            // 前景時聊天框已經顯示系統訊息，不需要額外通知
+            // 背景時如果 WebSocket 還連著會走這裡，如果斷了後端會發 APNs 推播
+            if scenePhase != .active {
+                let partnerName = apiService.partnerUser?.name ?? "對方"
+                notificationService.sendScreenStatusNotification(
+                    partnerName: partnerName,
+                    screenOn: event.screenOn
+                )
+            }
         }
         .onChange(of: webSocketManager.partnerGeofenceEvent) { _, event in
             guard let event else { return }
-            if event.event == "entry" {
-                notificationService.sendGeofenceEntryNotification(
-                    zoneName: event.zoneName,
-                    partnerName: event.senderName
-                )
-            } else {
-                notificationService.sendGeofenceExitNotification(
-                    zoneName: event.zoneName,
-                    partnerName: event.senderName
-                )
+            // 同理，只在非前景時發本地通知
+            if scenePhase != .active {
+                if event.event == "entry" {
+                    notificationService.sendGeofenceEntryNotification(
+                        zoneName: event.zoneName,
+                        partnerName: event.senderName
+                    )
+                } else {
+                    notificationService.sendGeofenceExitNotification(
+                        zoneName: event.zoneName,
+                        partnerName: event.senderName
+                    )
+                }
             }
         }
         .onChange(of: webSocketManager.partnerLocation?.timestamp) { _, _ in
