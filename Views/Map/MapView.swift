@@ -29,6 +29,9 @@ struct MapView: View {
     @State private var selectedMapStyle: MapStyleOption = .standard
     @State private var showStylePicker = false
     
+    // 是否正在刷新對方位置
+    @State private var isRefreshing = false
+    
     @Environment(\.colorScheme) private var colorScheme
     @Environment(LocationManager.self) private var locationManager
     @Environment(WebSocketManager.self) private var webSocketManager
@@ -247,6 +250,27 @@ struct MapView: View {
             
             Spacer()
             
+            // 手動刷新對方位置
+            Button {
+                Task {
+                    await refreshPartnerLocation()
+                }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.title3)
+                    .foregroundStyle(isRefreshing ? .secondary : AppTheme.purple)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        Circle()
+                            .fill(colorScheme == .dark
+                                  ? Color(.systemGray5)
+                                  : .white)
+                    )
+                    .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                    .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+            }
+            .disabled(isRefreshing)
+            
             // 地圖樣式切換
             Menu {
                 ForEach(MapStyleOption.allCases, id: \.self) { style in
@@ -410,6 +434,24 @@ struct MapView: View {
                             .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
                     )
             }
+        }
+    }
+    
+    // MARK: - 刷新對方位置
+    
+    /// 手動從後端拉取對方最新位置
+    private func refreshPartnerLocation() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+        
+        do {
+            if let location = try await apiService.fetchPartnerLatestLocation() {
+                webSocketManager.partnerLocation = location
+                // 如果有電量資訊也更新
+                // battery 從 locations 表拿，可能是 nil
+            }
+        } catch {
+            print("[MapView] 刷新對方位置失敗: \(error)")
         }
     }
     
