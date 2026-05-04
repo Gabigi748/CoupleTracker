@@ -398,6 +398,45 @@ final class APIService {
         currentUser?.batteryLevel = level
     }
     
+    // MARK: - 對方最新位置
+    
+    /// 取得配對對象的最新位置（用於 App 回到前景時快速恢復距離顯示）
+    /// - Returns: 對方最新位置，如果沒有則回傳 nil
+    func fetchPartnerLatestLocation() async throws -> Location? {
+        struct PartnerLocationResponse: Decodable {
+            let success: Bool
+            let data: PartnerLocationData?
+        }
+        struct PartnerLocationData: Decodable {
+            let lat: Double
+            let lng: Double
+            let accuracy: Double?
+            let battery: Int?
+            let created_at: String
+        }
+        
+        let response: PartnerLocationResponse = try await request(
+            method: "GET",
+            path: "/api/locations/partner-latest"
+        )
+        
+        guard let data = response.data else { return nil }
+        
+        let timestamp: Date
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        timestamp = formatter.date(from: data.created_at)
+            ?? ISO8601DateFormatter().date(from: data.created_at)
+            ?? Date()
+        
+        return Location(
+            latitude: data.lat,
+            longitude: data.lng,
+            accuracy: data.accuracy,
+            timestamp: timestamp
+        )
+    }
+    
     // MARK: - Token 存取
     
     /// 取得當前 JWT Token（供 WebSocketManager 使用）

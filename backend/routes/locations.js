@@ -60,4 +60,37 @@ router.get('/history', auth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/locations/partner-latest
+ * 取得配對對象的最新位置（用於 App 回到前景時快速恢復距離顯示）
+ * 回傳最近一筆位置記錄
+ */
+router.get('/partner-latest', auth, async (req, res) => {
+  try {
+    const [users] = await db.query('SELECT partner_id FROM users WHERE id = ?', [req.userId]);
+    const partnerId = users[0]?.partner_id;
+
+    if (!partnerId) {
+      return res.status(400).json({ success: false, error: '尚未配對' });
+    }
+
+    const [rows] = await db.query(
+      `SELECT l.lat, l.lng, l.accuracy, l.battery, l.created_at
+       FROM locations l
+       WHERE l.user_id = ?
+       ORDER BY l.created_at DESC LIMIT 1`,
+      [partnerId]
+    );
+
+    if (rows.length === 0) {
+      return res.json({ success: true, data: null });
+    }
+
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    console.error('[Location] 取得對方最新位置錯誤:', err);
+    res.status(500).json({ success: false, error: '伺服器錯誤' });
+  }
+});
+
 module.exports = router;

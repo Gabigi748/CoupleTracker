@@ -135,6 +135,16 @@ struct CoupleTrackerApp: App {
                 Task {
                     await geofenceManager.loadZones()
                 }
+                
+                // 主動拉一次對方最新位置（避免 WebSocket 斷線期間沒有對方位置）
+                Task {
+                    if let partnerLoc = try? await apiService.fetchPartnerLatestLocation() {
+                        // 只在 WebSocket 還沒收到對方位置時才用 API 的資料
+                        if webSocketManager.partnerLocation == nil {
+                            webSocketManager.partnerLocation = partnerLoc
+                        }
+                    }
+                }
             }
             
         case .background:
@@ -220,6 +230,15 @@ struct CoupleTrackerApp: App {
                 if let currentLoc = locationManager.currentLocation {
                     let clLoc = CLLocation(latitude: currentLoc.latitude, longitude: currentLoc.longitude)
                     geofenceManager.initializeStates(currentLocation: clLoc)
+                }
+            }
+            
+            // 啟動時也拉一次對方最新位置（WebSocket 連上前就能顯示距離）
+            Task {
+                if let partnerLoc = try? await apiService.fetchPartnerLatestLocation() {
+                    if webSocketManager.partnerLocation == nil {
+                        webSocketManager.partnerLocation = partnerLoc
+                    }
                 }
             }
         }
