@@ -141,33 +141,83 @@ final class NotificationService: NSObject {
     
     // MARK: - SOS 緊急通知
     
+    /// SOS 震動通知的固定識別碼（用於停止）
+    private let sosNotificationPrefix = "sos_alert_"
+    
     /// 發送 SOS 緊急本地通知
+    /// 會排程 30 次連續通知，每 3 秒一次，總共震動約 90 秒
+    /// 使用者點開 App 或手動停止才會中斷
     /// - Parameters:
     ///   - senderName: 發送者名稱
     ///   - location: 發送者位置
     func sendSOSNotification(senderName: String, location: Location?) {
-        let content = UNMutableNotificationContent()
-        content.title = "🆘 緊急求助"
-        content.body = "\(senderName) 發出了緊急求助！"
-        content.sound = .defaultCritical // 使用緊急音效
-        content.interruptionLevel = .critical // 突破勿擾模式
-        content.categoryIdentifier = "SOS_ALERT"
+        // 先清掉舊的 SOS 通知
+        stopSOSNotifications()
         
-        // 附加位置資訊
-        if let location {
-            content.userInfo = [
-                "latitude": location.latitude,
-                "longitude": location.longitude
-            ]
+        // 排程 30 次通知，每 3 秒一次
+        let totalCount = 30
+        let intervalSeconds: TimeInterval = 3
+        
+        for i in 0..<totalCount {
+            let content = UNMutableNotificationContent()
+            content.title = "緊急求助"
+            content.body = "\(senderName) 發出了緊急求助！請盡快回應"
+            content.sound = .defaultCritical
+            content.interruptionLevel = .critical
+            content.categoryIdentifier = "SOS_ALERT"
+            
+            if let location {
+                content.userInfo = [
+                    "latitude": location.latitude,
+                    "longitude": location.longitude,
+                    "sos_index": i
+                ]
+            }
+            
+            // 第一個立即發，後面的用 trigger 排程
+            let trigger: UNNotificationTrigger?
+            if i == 0 {
+                trigger = nil
+            } else {
+                trigger = UNTimeIntervalNotificationTrigger(
+                    timeInterval: Double(i) * intervalSeconds,
+                    repeats: false
+                )
+            }
+            
+            let request = UNNotificationRequest(
+                identifier: "\(sosNotificationPrefix)\(i)",
+                content: content,
+                trigger: trigger
+            )
+            
+            notificationCenter.add(request)
+        }
+    }
+    
+    /// 停止所有 SOS 通知（點開 App 時呼叫）
+    func stopSOSNotifications() {
+        // 找出所有待發的 SOS 通知
+        notificationCenter.getPendingNotificationRequests { [weak self] requests in
+            guard let self else { return }
+            let sosIds = requests
+                .map(\.identifier)
+                .filter { $0.hasPrefix(self.sosNotificationPrefix) }
+            if !sosIds.isEmpty {
+                self.notificationCenter.removePendingNotificationRequests(withIdentifiers: sosIds)
+            }
         }
         
-        let request = UNNotificationRequest(
-            identifier: "sos_\(UUID().uuidString)",
-            content: content,
-            trigger: nil
-        )
-        
-        notificationCenter.add(request)
+        // 也清掉已送達但還留在通知中心的
+        notificationCenter.getDeliveredNotifications { [weak self] notifications in
+            guard let self else { return }
+            let sosIds = notifications
+                .map(\.request.identifier)
+                .filter { $0.hasPrefix(self.sosNotificationPrefix) }
+            if !sosIds.isEmpty {
+                self.notificationCenter.removeDeliveredNotifications(withIdentifiers: sosIds)
+            }
+        }
     }
     
     // MARK: - 螢幕狀態通知
@@ -262,6 +312,14 @@ extension NotificationService: @preconcurrency UNUserNotificationCenterDelegate 
     ) async {
         let actionId = response.actionIdentifier
         let userInfo = response.notification.request.content.userInfo
+        let notifId = response.notification.request.identifier
+        
+        // 如果點到的是 SOS 通知（任何 action 包括預設點擊），停止所有 SOS 震動
+        if notifId.hasPrefix("sos_alert_") || actionId == "SOS_CALL" || actionId == "SOS_MAP" {
+            await MainActor.run {
+                self.stopSOSNotifications()
+            }
+        }
         
         switch actionId {
         case "SOS_CALL":

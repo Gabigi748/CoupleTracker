@@ -123,6 +123,9 @@ struct CoupleTrackerApp: App {
             locationManager.setForegroundAccuracy()
             locationManager.startUpdatingLocation()
             
+            // 停止 SOS 震動通知（使用者已經看到 App 了）
+            notificationService.stopSOSNotifications()
+            
             // 恢復 motion monitoring
             if !motionManager.isMonitoring {
                 motionManager.startMonitoring()
