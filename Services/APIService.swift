@@ -292,8 +292,8 @@ final class APIService {
     ///   - longitude: 經度
     func sendSOS(latitude: Double, longitude: Double) async throws {
         let body: [String: Any] = [
-            "latitude": latitude,
-            "longitude": longitude
+            "lat": latitude,
+            "lng": longitude
         ]
         
         let _: EmptyResponse = try await request(

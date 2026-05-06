@@ -11,6 +11,10 @@
 import SwiftUI
 
 struct SOSView: View {
+    // MARK: - 環境
+    @Environment(APIService.self) private var apiService
+    @Environment(LocationManager.self) private var locationManager
+    
     // MARK: - 狀態
     
     /// 長按進度（0.0 ~ 1.0）
@@ -27,6 +31,12 @@ struct SOSView: View {
     
     /// 觸發後的打勾動畫
     @State private var showCheckmark = false
+    
+    /// 發送中
+    @State private var isSending = false
+    
+    /// 錯誤訊息
+    @State private var errorMessage: String?
     
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
@@ -216,13 +226,21 @@ struct SOSView: View {
             }
             
             VStack(spacing: 8) {
-                Text("已發送緊急位置給對方")
+                Text(errorMessage == nil ? "已發送緊急位置給對方" : "發送失敗")
                     .font(.title3.bold())
-                    .foregroundStyle(.green)
+                    .foregroundStyle(errorMessage == nil ? .green : AppTheme.sosRed)
                 
-                Text("對方會收到你的即時位置通知")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                } else {
+                    Text("對方會收到你的即時位置通知")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             // 返回按鈕
@@ -334,7 +352,38 @@ struct SOSView: View {
             showCheckmark = true
         }
         
-        // TODO: 呼叫 APIService 發送 SOS 訊息與位置
+        // 呼叫 API 發送 SOS
+        Task {
+            await sendSOSRequest()
+        }
+    }
+    
+    /// 呼叫後端發送 SOS
+    @MainActor
+    private func sendSOSRequest() async {
+        isSending = true
+        defer { isSending = false }
+        
+        // 取得當前位置（優先用 LocationManager 的最新位置）
+        let latitude: Double
+        let longitude: Double
+        
+        if let currentLoc = locationManager.currentLocation {
+            latitude = currentLoc.latitude
+            longitude = currentLoc.longitude
+        } else {
+            // 沒有位置就送 0（後端允許 null）
+            latitude = 0.0
+            longitude = 0.0
+        }
+        
+        do {
+            try await apiService.sendSOS(latitude: latitude, longitude: longitude)
+            print("[SOS] 已成功發送")
+        } catch {
+            errorMessage = "發送失敗：\(error.localizedDescription)"
+            print("[SOS] 發送失敗：\(error)")
+        }
     }
 }
 
@@ -344,11 +393,15 @@ struct SOSView: View {
     NavigationStack {
         SOSView()
     }
+    .environment(APIService())
+    .environment(LocationManager())
 }
 
 #Preview("深色模式") {
     NavigationStack {
         SOSView()
     }
+    .environment(APIService())
+    .environment(LocationManager())
     .preferredColorScheme(.dark)
 }
