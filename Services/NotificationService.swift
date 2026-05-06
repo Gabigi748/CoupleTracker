@@ -154,9 +154,9 @@ final class NotificationService: NSObject {
         // 先清掉舊的 SOS 通知
         stopSOSNotifications()
         
-        // 排程 30 次通知，每 3 秒一次
-        let totalCount = 30
-        let intervalSeconds: TimeInterval = 3
+        // 排程 60 次通知，每 1.5 秒一次（總共約 90 秒高頻震動）
+        let totalCount = 60
+        let intervalSeconds: TimeInterval = 1.5
         
         for i in 0..<totalCount {
             let content = UNMutableNotificationContent()
