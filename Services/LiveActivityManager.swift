@@ -83,6 +83,32 @@ final class LiveActivityManager {
         }
     }
     
+    /// 確保 Live Activity 存在（前景化時呼叫）
+    /// 若系統的 activities list 為空（被系統收掉或使用者滑掉），則重新啟動
+    func ensureLiveActivity(myName: String, partnerName: String) {
+        guard isActivityKitAvailable() else { return }
+        
+        Task { @MainActor in
+            // 檢查系統層面是否還有活躍的 activity
+            let activeCount = Activity<CoupleTrackerAttributes>.activities.count
+            
+            if activeCount == 0 {
+                print("[LiveActivity] 系統層面無活躍 Activity，重新啟動")
+                self.isActivityActive = false
+                self.currentActivityId = nil
+                self.doStartLiveActivity(myName: myName, partnerName: partnerName)
+            } else if !self.isActivityActive {
+                // 狀態不一致，同步一下
+                print("[LiveActivity] 狀態不一致，同步本地狀態")
+                self.isActivityActive = true
+                if let first = Activity<CoupleTrackerAttributes>.activities.first {
+                    self.currentActivityId = first.id
+                    self.observeActivityState(first, myName: myName, partnerName: partnerName)
+                }
+            }
+        }
+    }
+    
     /// 更新 Live Activity
     func updateLiveActivity(
         partnerName: String,
@@ -91,8 +117,24 @@ final class LiveActivityManager {
         activity: String,
         charging: Bool = false
     ) {
-        // 如果沒有活躍的 Activity，直接返回（不碰 ActivityKit）
-        guard isActivityActive else { return }
+        // 以系統實際狀態為準（比 local flag 可靠）
+        let systemActivities = Activity<CoupleTrackerAttributes>.activities
+        guard !systemActivities.isEmpty else {
+            // 系統沒有活躍的 Activity，同步 local flag
+            if isActivityActive {
+                isActivityActive = false
+                currentActivityId = nil
+            }
+            return
+        }
+        
+        // 同步 local flag（如果之前不一致）
+        if !isActivityActive {
+            isActivityActive = true
+            if currentActivityId == nil {
+                currentActivityId = systemActivities.first?.id
+            }
+        }
         
         // 追蹤靜止開始時間
         if activity == "stationary" {
@@ -119,7 +161,7 @@ final class LiveActivityManager {
         let content = ActivityContent(state: updatedState, staleDate: nil)
         
         Task.detached {
-            for activity in Activity<CoupleTrackerAttributes>.activities {
+            for activity in systemActivities {
                 await activity.update(content)
             }
         }
@@ -222,12 +264,13 @@ final class LiveActivityManager {
             for await state in activity.activityStateUpdates {
                 switch state {
                 case .dismissed:
-                    print("[LiveActivity] 被使用者滑掉，3 秒後重啟")
+                    print("[LiveActivity] 被使用者滑掉或被系統收掉，2 秒後重啟")
                     self.isActivityActive = false
                     self.currentActivityId = nil
-                    try? await Task.sleep(for: .seconds(3))
-                    // 只在 App 還在前景時重啟
-                    if UIApplication.shared.applicationState == .active {
+                    try? await Task.sleep(for: .seconds(2))
+                    // 只要 App 不是背景就重啟（前景 .active 或過場 .inactive 都可）
+                    // 完全背景 .background 時 ActivityKit 可能不可用，等下次前景時由 ensureLiveActivity 處理
+                    if UIApplication.shared.applicationState != .background {
                         self.doStartLiveActivity(myName: myName, partnerName: partnerName)
                     }
                     return

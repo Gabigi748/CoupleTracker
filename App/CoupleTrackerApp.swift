@@ -126,6 +126,13 @@ struct CoupleTrackerApp: App {
             // 停止 SOS 震動通知（使用者已經看到 App 了）
             notificationService.stopSOSNotifications()
             
+            // 確保 Live Activity 還活著（被系統收掉或使用者滑掉時重啟）
+            if apiService.isAuthenticated {
+                let myName = apiService.currentUser?.name ?? "我"
+                let partnerName = apiService.partnerUser?.name ?? "對方"
+                liveActivityManager.ensureLiveActivity(myName: myName, partnerName: partnerName)
+            }
+            
             // 恢復 motion monitoring
             if !motionManager.isMonitoring {
                 motionManager.startMonitoring()
