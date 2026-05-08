@@ -49,5 +49,7 @@
 	<string>「小寧和魚魚」需要偵測您的移動狀態（走路、開車等），以智慧調整定位精度並通知對方</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
 </dict>
 </plist>

@@ -218,6 +218,10 @@ struct CoupleTrackerApp: App {
                     let partnerCLLoc = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
                     let distance = myLoc.distance(from: partnerCLLoc)
                     let partnerName = apiService.partnerUser?.name ?? "對方"
+                    let myName = apiService.currentUser?.name ?? "我"
+                    
+                    // 確保 Live Activity 存在（背景喚醒時系統可能已收掉）
+                    liveActivityManager.ensureLiveActivity(myName: myName, partnerName: partnerName)
                     
                     liveActivityManager.updateLiveActivity(
                         partnerName: partnerName,

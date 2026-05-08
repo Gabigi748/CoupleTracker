@@ -56,12 +56,9 @@ final class LiveActivityManager {
             return false
         }
         
-        // 檢查 App 是否在前景（背景啟動時 ActivityKit 可能不可用）
-        guard UIApplication.shared.applicationState != .background else {
-            // 不快取，下次前景時再試
-            return false
-        }
-        
+        // iOS 16.2+ 允許在背景啟動 Live Activity（只要有 Info.plist 的
+        // NSSupportsLiveActivities）所以這裡不再阻擋背景狀態。如果後續
+        // Activity.request 失敗，會在 doStartLiveActivity 捕捉錯誤。
         activityKitAvailable = true
         return true
     }
