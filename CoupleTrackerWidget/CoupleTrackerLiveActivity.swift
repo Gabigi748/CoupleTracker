@@ -83,10 +83,15 @@ struct CoupleTrackerLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                // 靈動島緊湊狀態 — 左邊：愛心（不帶文字，避免被系統壓縮）
-                Image(systemName: "heart.fill")
-                    .foregroundStyle(.pink)
-                    .font(.caption2)
+                // 靈動島緊湊狀態 — 左邊：愛心 + 對方名字
+                HStack(spacing: 3) {
+                    Image(systemName: "heart.fill")
+                        .foregroundStyle(.pink)
+                        .font(.caption2)
+                    Text(context.state.partnerName)
+                        .font(.caption2.bold())
+                        .lineLimit(1)
+                }
             } compactTrailing: {
                 // 靈動島緊湊狀態 — 右邊：距離（顏色隨距離變化）
                 Text(formatDistance(context.state.partnerDistance))
