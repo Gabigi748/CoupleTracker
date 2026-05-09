@@ -387,20 +387,38 @@ struct ContentView: View {
         }
         .onChange(of: webSocketManager.partnerLocation?.timestamp) { _, _ in
             // 收到對方位置更新時，更新 Live Activity
-            guard let partnerLoc = webSocketManager.partnerLocation,
-                  let myLoc = locationManager.currentLocation else { return }
-            let myCLLoc = CLLocation(latitude: myLoc.latitude, longitude: myLoc.longitude)
-            let partnerCLLoc = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
-            let distance = myCLLoc.distance(from: partnerCLLoc)
-            let partnerName = apiService.partnerUser?.name ?? "對方"
-            
-            liveActivityManager.updateLiveActivity(
-                partnerName: partnerName,
-                distance: distance,
-                battery: webSocketManager.partnerBattery ?? -1,
-                activity: webSocketManager.partnerActivity,
-                charging: webSocketManager.partnerCharging
-            )
+            updateLiveActivityFromCurrentState()
         }
+        .onChange(of: webSocketManager.partnerBattery) { _, _ in
+            updateLiveActivityFromCurrentState()
+        }
+        .onChange(of: webSocketManager.partnerActivity) { _, _ in
+            updateLiveActivityFromCurrentState()
+        }
+        .onChange(of: webSocketManager.partnerCharging) { _, _ in
+            updateLiveActivityFromCurrentState()
+        }
+    }
+    
+    /// 從當前狀態更新 Live Activity（避免多個 onChange 重複代碼）
+    private func updateLiveActivityFromCurrentState() {
+        guard let partnerLoc = webSocketManager.partnerLocation,
+              let myLoc = locationManager.currentLocation else { return }
+        let myCLLoc = CLLocation(latitude: myLoc.latitude, longitude: myLoc.longitude)
+        let partnerCLLoc = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
+        let distance = myCLLoc.distance(from: partnerCLLoc)
+        let partnerName = apiService.partnerUser?.name ?? "對方"
+        let myName = apiService.currentUser?.name ?? "我"
+        
+        // 確保 Activity 存在
+        liveActivityManager.ensureLiveActivity(myName: myName, partnerName: partnerName)
+        
+        liveActivityManager.updateLiveActivity(
+            partnerName: partnerName,
+            distance: distance,
+            battery: webSocketManager.partnerBattery ?? -1,
+            activity: webSocketManager.partnerActivity,
+            charging: webSocketManager.partnerCharging
+        )
     }
 }

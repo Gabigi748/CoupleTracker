@@ -41,6 +41,10 @@ final class LiveActivityManager {
     /// 上一次的移動狀態
     private var lastActivity: String?
     
+    /// 最近一次的狀態快照（用於啟動/重啟新 Activity 時帶上當前資料）
+    /// 避免新建 Activity 顯示 0m 直到下一次 updateLiveActivity 才刷新
+    private var lastState: CoupleTrackerAttributes.ContentState?
+    
     // MARK: - 安全檢查
     
     /// 安全檢查 ActivityKit 是否可用
@@ -155,6 +159,9 @@ final class LiveActivityManager {
             stationarySince: stationarySince
         )
         
+        // 記錄最新狀態，下次重啟新 Activity 會用到
+        lastState = updatedState
+        
         let content = ActivityContent(state: updatedState, staleDate: nil)
         
         Task.detached {
@@ -194,7 +201,8 @@ final class LiveActivityManager {
             try? await Task.sleep(for: .milliseconds(500))
             
             let attributes = CoupleTrackerAttributes(myName: myName)
-            let initialState = CoupleTrackerAttributes.ContentState(
+            // 使用上一次的狀態（若有），避免新 Activity 顯示 0m
+            let initialState = self.lastState ?? CoupleTrackerAttributes.ContentState(
                 partnerName: partnerName,
                 partnerDistance: 0,
                 partnerBattery: -1,

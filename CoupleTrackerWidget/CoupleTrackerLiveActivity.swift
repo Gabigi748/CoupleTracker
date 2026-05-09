@@ -83,26 +83,25 @@ struct CoupleTrackerLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                // 靈動島緊湊狀態 — 左邊：愛心 + 對方名字
-                HStack(spacing: 3) {
-                    Image(systemName: "heart.fill")
-                        .foregroundStyle(.pink)
-                        .font(.caption2)
-                    Text(context.state.partnerName)
-                        .font(.caption2.bold())
-                        .lineLimit(1)
-                }
+                // 靈動島緊湊狀態 — 左邊：愛心（不帶文字，避免被系統壓縮）
+                Image(systemName: "heart.fill")
+                    .foregroundStyle(.pink)
+                    .font(.caption2)
             } compactTrailing: {
                 // 靈動島緊湊狀態 — 右邊：距離（顏色隨距離變化）
                 Text(formatDistance(context.state.partnerDistance))
                     .font(.caption2.bold())
                     .foregroundStyle(distanceColor(context.state.partnerDistance))
                     .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             } minimal: {
-                // 最小狀態
-                Image(systemName: "heart.fill")
-                    .foregroundStyle(.pink)
-                    .font(.caption)
+                // 最小狀態 — 被擠壓時用距離
+                Text(formatDistance(context.state.partnerDistance))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(distanceColor(context.state.partnerDistance))
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
             }
         }
     }
