@@ -101,12 +101,10 @@ struct CoupleTrackerLiveActivity: Widget {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             } minimal: {
-                // 最小狀態 — 被擠壓時用距離
-                Text(formatDistance(context.state.partnerDistance))
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(distanceColor(context.state.partnerDistance))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
+                // 最小狀態
+                Image(systemName: "heart.fill")
+                    .foregroundStyle(.pink)
+                    .font(.caption)
             }
         }
     }
