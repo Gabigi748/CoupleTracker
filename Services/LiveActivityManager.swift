@@ -193,13 +193,19 @@ final class LiveActivityManager {
             return
         }
         
-        // 清理所有舊的 Activity（避免疊加）
-        cleanupAllActivities()
+        // 如果系統已有活躍 Activity，不再重複建立（避免疊加）
+        if !Activity<CoupleTrackerAttributes>.activities.isEmpty {
+            print("[LiveActivity] 系統已有活躍 Activity，跳過建立")
+            if let first = Activity<CoupleTrackerAttributes>.activities.first {
+                self.currentActivityId = first.id
+                self.isActivityActive = true
+                self.observeActivityState(first, myName: myName, partnerName: partnerName)
+            }
+            return
+        }
         
-        // 等一下讓舊的完全結束
+        // 直接建立新的（不先清理舊的，避免空白過場）
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
-            
             let attributes = CoupleTrackerAttributes(myName: myName)
             // 使用上一次的狀態（若有），避免新 Activity 顯示 0m
             let initialState = self.lastState ?? CoupleTrackerAttributes.ContentState(
@@ -269,12 +275,10 @@ final class LiveActivityManager {
             for await state in activity.activityStateUpdates {
                 switch state {
                 case .dismissed:
-                    print("[LiveActivity] 被使用者滑掉或被系統收掉，2 秒後重啟")
+                    print("[LiveActivity] 被使用者滑掉或被系統收掉，立即重啟")
                     self.isActivityActive = false
                     self.currentActivityId = nil
-                    try? await Task.sleep(for: .seconds(2))
-                    // 只要 App 不是背景就重啟（前景 .active 或過場 .inactive 都可）
-                    // 完全背景 .background 時 ActivityKit 可能不可用，等下次前景時由 ensureLiveActivity 處理
+                    // 立即重啟（不延遲）— 減少位置 icon 過場時間
                     if UIApplication.shared.applicationState != .background {
                         self.doStartLiveActivity(myName: myName, partnerName: partnerName)
                     }
