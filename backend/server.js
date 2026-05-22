@@ -17,6 +17,7 @@ const locationRoutes = require('./routes/locations');
 const geofenceRoutes = require('./routes/geofences');
 const chatRoutes = require('./routes/chat');
 const sosRoutes = require('./routes/sos');
+const callStatusRoutes = require('./routes/callStatus');
 
 // 服務
 const { initWebSocket } = require('./services/websocket');
@@ -58,6 +59,7 @@ app.use('/api/locations', locationRoutes);
 app.use('/api/geofences', geofenceRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/sos', sosRoutes);
+app.use('/api/call-status', callStatusRoutes);
 
 // 健康檢查
 app.get('/health', (req, res) => {

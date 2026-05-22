@@ -137,6 +137,9 @@ async function handleMessage(userId, data) {
     case 'motion_activity':
       await handleMotionActivity(userId, data);
       break;
+    case 'call_status':
+      await handleCallStatus(userId, data);
+      break;
     case 'ping':
       sendToUser(userId, { type: 'pong', timestamp: Date.now() });
       break;
@@ -491,6 +494,59 @@ async function handleMotionActivity(userId, data) {
     }
   } catch (err) {
     console.error(`[WS] 移動狀態處理錯誤 (用戶 ${userId}):`, err.message);
+  }
+}
+
+/**
+ * 處理通話狀態
+ * - 轉發給配對對象
+ * - 對方離線時發推播
+ */
+async function handleCallStatus(userId, data) {
+  const { status, timestamp } = data;
+
+  if (!status || !['started', 'ended'].includes(status)) return;
+
+  try {
+    // 取得配對對象
+    const [users] = await db.query(
+      `SELECT u.partner_id, u.name, u.email, p.device_token AS partner_device_token
+       FROM users u
+       LEFT JOIN users p ON u.partner_id = p.id
+       WHERE u.id = ?`,
+      [userId]
+    );
+
+    const partnerId = users[0]?.partner_id;
+    if (!partnerId) return;
+
+    const senderName = users[0].name || users[0].email;
+
+    // 轉發給配對對象
+    const delivered = sendToUser(partnerId, {
+      type: 'partner_call_status',
+      partnerName: senderName,
+      status,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+
+    // 對方不在線時，發推播通知
+    if (!delivered) {
+      const title = status === 'started' ? '📞 通話中' : '📞 通話結束';
+      const body = status === 'started'
+        ? `${senderName} 正在通話中`
+        : `${senderName} 已結束通話`;
+
+      if (users[0].partner_device_token) {
+        await sendPush(users[0].partner_device_token, title, body, {
+          type: 'call_status',
+          sender_id: userId,
+          status,
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[WS] 通話狀態處理錯誤 (用戶 ${userId}):`, err.message);
   }
 }
 

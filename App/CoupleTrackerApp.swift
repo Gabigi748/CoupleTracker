@@ -76,6 +76,9 @@ struct CoupleTrackerApp: App {
     /// Live Activity 管理器
     @State private var liveActivityManager = LiveActivityManager()
     
+    /// 通話監聽服務
+    @State private var callObserverService = CallObserverService()
+    
     // MARK: - 初始化
     
     init() {
@@ -276,6 +279,9 @@ struct CoupleTrackerApp: App {
         }
         motionManager.startMonitoring()
         
+        // 啟動通話監聽服務
+        callObserverService.configure(with: webSocketManager)
+        
         // 啟動 Live Activity
         if apiService.isAuthenticated {
             let myName = apiService.currentUser?.name ?? "我"
@@ -383,6 +389,16 @@ struct ContentView: View {
                         partnerName: event.senderName
                     )
                 }
+            }
+        }
+        .onChange(of: webSocketManager.partnerCallEvent) { _, event in
+            guard let event else { return }
+            // 收到對方通話狀態時發本地通知（非前景時）
+            if scenePhase != .active {
+                notificationService.sendCallNotification(
+                    partnerName: event.partnerName,
+                    status: event.status
+                )
             }
         }
         .onChange(of: webSocketManager.partnerLocation?.timestamp) { _, _ in

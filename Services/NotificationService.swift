@@ -222,6 +222,34 @@ final class NotificationService: NSObject {
     
     // MARK: - 螢幕狀態通知
     
+    /// 發送對方通話狀態通知
+    /// - Parameters:
+    ///   - partnerName: 對方名稱
+    ///   - status: 通話狀態（"started" 或 "ended"）
+    func sendCallNotification(partnerName: String, status: String) {
+        let content = UNMutableNotificationContent()
+        
+        if status == "started" {
+            content.title = "📞 通話中"
+            content.body = "\(partnerName) 正在通話中"
+        } else {
+            content.title = "📞 通話結束"
+            content.body = "\(partnerName) 已結束通話"
+        }
+        
+        content.sound = .default
+        content.categoryIdentifier = "CALL_STATUS"
+        
+        // 用固定 ID，新通知會取代舊的
+        let request = UNNotificationRequest(
+            identifier: "call_status_\(status)",
+            content: content,
+            trigger: nil
+        )
+        
+        notificationCenter.add(request)
+    }
+    
     /// 發送對方螢幕開關通知
     /// - Parameters:
     ///   - partnerName: 對方名稱
@@ -288,7 +316,15 @@ final class NotificationService: NSObject {
             options: .customDismissAction
         )
         
-        notificationCenter.setNotificationCategories([geofenceCategory, sosCategory, screenCategory])
+        // 通話狀態分類
+        let callCategory = UNNotificationCategory(
+            identifier: "CALL_STATUS",
+            actions: [],
+            intentIdentifiers: [],
+            options: .customDismissAction
+        )
+        
+        notificationCenter.setNotificationCategories([geofenceCategory, sosCategory, screenCategory, callCategory])
     }
 }
 

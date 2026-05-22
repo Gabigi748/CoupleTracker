@@ -60,6 +60,12 @@ final class WebSocketManager {
     /// 對方是否在充電
     var partnerCharging: Bool = false
     
+    /// 對方通話狀態事件（供 NotificationService 使用）
+    var partnerCallEvent: PartnerCallEvent?
+    
+    /// 對方是否正在通話中
+    var partnerOnCall: Bool = false
+    
     // MARK: - 私有屬性
     
     /// WebSocket 連線
@@ -237,6 +243,18 @@ final class WebSocketManager {
         sendJSON(payload)
     }
     
+    /// 發送通話狀態給對方
+    /// - Parameter status: 通話狀態（"started" 或 "ended"）
+    func sendCallStatus(status: String) {
+        let payload: [String: Any] = [
+            "type": "call_status",
+            "status": status,
+            "timestamp": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        sendJSON(payload)
+    }
+    
     // MARK: - 螢幕監聽
     
     /// 開始監聽螢幕開關
@@ -393,6 +411,10 @@ final class WebSocketManager {
             if let activity = json["activity"] as? String {
                 partnerActivity = activity
             }
+            
+        case "partner_call_status":
+            // 對方通話狀態：{"type":"partner_call_status","partnerName":...,"status":...,"timestamp":...}
+            handlePartnerCallStatus(json)
             
         case "pong":
             // 心跳回應，連線正常
@@ -610,6 +632,31 @@ final class WebSocketManager {
         )
     }
     
+    /// 處理對方通話狀態
+    /// 後端格式：{"type":"partner_call_status","partnerName":...,"status":...,"timestamp":...}
+    private func handlePartnerCallStatus(_ json: [String: Any]) {
+        guard let status = json["status"] as? String else { return }
+        
+        let partnerName = json["partnerName"] as? String ?? ""
+        
+        let timestamp: Date
+        if let timestampStr = json["timestamp"] as? String {
+            timestamp = ISO8601DateFormatter().date(from: timestampStr) ?? Date()
+        } else {
+            timestamp = Date()
+        }
+        
+        // 更新通話狀態
+        partnerOnCall = (status == "started")
+        
+        // 觸發通話事件（供 NotificationService 使用）
+        partnerCallEvent = PartnerCallEvent(
+            partnerName: partnerName,
+            status: status,
+            timestamp: timestamp
+        )
+    }
+    
     /// 發送 JSON 訊息
     private func sendJSON(_ payload: [String: Any]) {
         guard connectionState == .connected else { return }
@@ -734,5 +781,12 @@ struct PartnerGeofenceEvent: Equatable, Sendable {
     let zoneName: String
     let event: String  // "entry" or "exit"
     let senderName: String
+    let timestamp: Date
+}
+
+/// 對方通話事件
+struct PartnerCallEvent: Equatable, Sendable {
+    let partnerName: String
+    let status: String  // "started" or "ended"
     let timestamp: Date
 }
