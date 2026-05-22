@@ -6,7 +6,6 @@
 
 import Foundation
 import CallKit
-import Observation
 
 /// 通話狀態
 enum CallStatus: String, Sendable {
@@ -15,19 +14,18 @@ enum CallStatus: String, Sendable {
     case ended = "ended"
 }
 
-/// 通話監聽服務
+/// 通話監聯服務
 /// 使用 CXCallObserver 偵測裝置通話狀態變化，並透過 WebSocket 通知對方
 @MainActor
-@Observable
-final class CallObserverService: NSObject {
+final class CallObserverService: NSObject, ObservableObject {
     
     // MARK: - 公開屬性
     
     /// 當前通話狀態
-    var currentStatus: CallStatus = .idle
+    @Published var currentStatus: CallStatus = .idle
     
     /// 是否正在通話中
-    var isOnCall: Bool = false
+    @Published var isOnCall: Bool = false
     
     // MARK: - 私有屬性
     
@@ -52,26 +50,28 @@ final class CallObserverService: NSObject {
     /// - Parameter webSocketManager: WebSocket 管理器（用於發送通話狀態）
     func configure(with webSocketManager: WebSocketManager) {
         self.webSocketManager = webSocketManager
-        // CXCallObserverDelegate 的回調不在 MainActor，需要用 nonisolated wrapper
         callObserver.setDelegate(self, queue: DispatchQueue.main)
     }
 }
 
 // MARK: - CXCallObserverDelegate
 
-extension CallObserverService: CXCallObserverDelegate {
+extension CallObserverService: @preconcurrency CXCallObserverDelegate {
     
     /// 通話狀態變化回調
     nonisolated func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
-        Task { @MainActor in
-            handleCallChange(call)
+        let hasEnded = call.hasEnded
+        let isOutgoing = call.isOutgoing
+        let hasConnected = call.hasConnected
+        
+        Task { @MainActor [weak self] in
+            self?.handleCallChange(hasEnded: hasEnded, isOutgoing: isOutgoing, hasConnected: hasConnected)
         }
     }
     
     /// 處理通話狀態變化
-    @MainActor
-    private func handleCallChange(_ call: CXCall) {
-        if call.hasEnded {
+    private func handleCallChange(hasEnded: Bool, isOutgoing: Bool, hasConnected: Bool) {
+        if hasEnded {
             // 通話結束
             if hasActiveCall {
                 hasActiveCall = false
@@ -79,7 +79,7 @@ extension CallObserverService: CXCallObserverDelegate {
                 currentStatus = .ended
                 sendCallStatus(.ended)
             }
-        } else if call.isOutgoing && !call.hasConnected {
+        } else if isOutgoing && !hasConnected {
             // 撥出中（尚未接通）— 視為通話開始
             if !hasActiveCall {
                 hasActiveCall = true
@@ -87,7 +87,7 @@ extension CallObserverService: CXCallObserverDelegate {
                 currentStatus = .started
                 sendCallStatus(.started)
             }
-        } else if !call.isOutgoing && !call.hasConnected && !call.hasEnded {
+        } else if !isOutgoing && !hasConnected && !hasEnded {
             // 來電響鈴中 — 視為通話開始
             if !hasActiveCall {
                 hasActiveCall = true
@@ -95,7 +95,7 @@ extension CallObserverService: CXCallObserverDelegate {
                 currentStatus = .started
                 sendCallStatus(.started)
             }
-        } else if call.hasConnected && !call.hasEnded {
+        } else if hasConnected && !hasEnded {
             // 通話已接通
             if !hasActiveCall {
                 hasActiveCall = true
@@ -107,7 +107,6 @@ extension CallObserverService: CXCallObserverDelegate {
     }
     
     /// 透過 WebSocket 發送通話狀態
-    @MainActor
     private func sendCallStatus(_ status: CallStatus) {
         guard let webSocketManager else { return }
         webSocketManager.sendCallStatus(status: status.rawValue)
