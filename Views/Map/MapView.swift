@@ -392,13 +392,13 @@ struct MapView: View {
                     }
                 } label: {
                     Image(systemName: "heart.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(AppTheme.pink)
-                        .frame(width: 44, height: 44)
+                        .font(.body)
+                        .foregroundStyle(AppTheme.pink.opacity(0.8))
+                        .frame(width: 36, height: 36)
                         .background(
                             Circle()
                                 .fill(.ultraThinMaterial)
-                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                                .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
                         )
                 }
             }
@@ -414,13 +414,13 @@ struct MapView: View {
                     }
                 } label: {
                     Image(systemName: "location.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.blue)
-                        .frame(width: 44, height: 44)
+                        .font(.body)
+                        .foregroundStyle(.blue.opacity(0.7))
+                        .frame(width: 36, height: 36)
                         .background(
                             Circle()
                                 .fill(.ultraThinMaterial)
-                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                                .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
                         )
                 }
             }
@@ -432,13 +432,13 @@ struct MapView: View {
                 }
             } label: {
                 Image(systemName: "person.2.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(AppTheme.purple)
-                    .frame(width: 44, height: 44)
+                    .font(.body)
+                    .foregroundStyle(AppTheme.purple.opacity(0.8))
+                    .frame(width: 36, height: 36)
                     .background(
                         Circle()
                             .fill(.ultraThinMaterial)
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                            .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
                     )
             }
         }
