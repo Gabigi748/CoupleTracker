@@ -38,6 +38,18 @@ final class LiveActivityManager {
     /// 對方開始靜止的時間（用於判斷是否顯示睡覺貓）
     private var stationarySince: Date?
     
+    /// 靈動島開關（持久化到 UserDefaults，預設開啟）
+    /// 用反向 key：disabled=false 表示 enabled
+    var isLiveActivityEnabled: Bool {
+        get { !UserDefaults.standard.bool(forKey: "liveActivityDisabled") }
+        set {
+            UserDefaults.standard.set(!newValue, forKey: "liveActivityDisabled")
+            if !newValue {
+                endLiveActivity()
+            }
+        }
+    }
+    
     /// 上一次的移動狀態
     private var lastActivity: String?
     
@@ -71,6 +83,10 @@ final class LiveActivityManager {
     
     /// 開始 Live Activity
     func startLiveActivity(myName: String, partnerName: String) {
+        guard isLiveActivityEnabled else {
+            print("[LiveActivity] 靈動島已關閉，跳過")
+            return
+        }
         guard isActivityKitAvailable() else {
             print("[LiveActivity] ActivityKit 不可用，跳過")
             return
@@ -87,6 +103,13 @@ final class LiveActivityManager {
     /// 確保 Live Activity 存在（前景化時呼叫）
     /// 若系統的 activities list 為空（被系統收掉或使用者滑掉），則重新啟動
     func ensureLiveActivity(myName: String, partnerName: String) {
+        guard isLiveActivityEnabled else {
+            // 使用者關閉了靈動島，確保沒有殘留的 Activity
+            if isActivityActive {
+                endLiveActivity()
+            }
+            return
+        }
         guard isActivityKitAvailable() else { return }
         
         Task { @MainActor in

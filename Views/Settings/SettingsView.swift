@@ -7,6 +7,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(APIService.self) private var apiService
+    @Environment(LiveActivityManager.self) private var liveActivityManager
     
     /// 高精度定位模式
     @State private var isHighAccuracy = true
@@ -167,6 +168,29 @@ struct SettingsView: View {
     // MARK: - 功能設定
     private var featureSection: some View {
         Section("功能設定") {
+            HStack {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("靈動島")
+                        Text(liveActivityManager.isLiveActivityEnabled ? "顯示即時距離與狀態" : "已關閉")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "island.fill")
+                        .foregroundStyle(AppTheme.purple)
+                }
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { liveActivityManager.isLiveActivityEnabled },
+                    set: { liveActivityManager.isLiveActivityEnabled = $0 }
+                ))
+                    .tint(AppTheme.pink)
+                    .labelsHidden()
+            }
+            
             NavigationLink {
                 GeofenceSetupView()
             } label: {
