@@ -63,7 +63,7 @@ final class LocationManager: NSObject {
         // 背景定位設定
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.pausesLocationUpdatesAutomatically = false
-        locationManager.showsBackgroundLocationIndicator = true
+        locationManager.showsBackgroundLocationIndicator = false
         // 距離過濾器：移動 5 公尺就觸發更新（從 10m 降低以提高精度）
         locationManager.distanceFilter = 5
         // 啟用活動類型提示，讓系統更好地優化定位
