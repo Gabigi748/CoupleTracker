@@ -6,6 +6,7 @@
 
 import Foundation
 import UIKit
+import Network
 import Observation
 
 /// WebSocket 連線狀態
@@ -95,6 +96,9 @@ final class WebSocketManager {
     /// URLSession 實例
     private let session: URLSession
     
+    /// 網路狀態監控器（偵測網路恢復後自動重連）
+    private var pathMonitor: NWPathMonitor?
+    
     /// 螢幕狀態節流：上次發送螢幕開啟的時間
     private var lastScreenOnSent: Date?
     
@@ -123,12 +127,14 @@ final class WebSocketManager {
         
         establishConnection()
         startScreenMonitoring()
+        startNetworkMonitoring()
     }
     
     /// 主動斷開 WebSocket 連線
     func disconnect() {
         isManualDisconnect = true
         stopScreenMonitoring()
+        stopNetworkMonitoring()
         cleanup()
         connectionState = .disconnected
     }
@@ -253,6 +259,40 @@ final class WebSocketManager {
         ]
         
         sendJSON(payload)
+    }
+    
+    // MARK: - 網路狀態監控
+    
+    /// 開始監控網路狀態，網路恢復時自動重連
+    private func startNetworkMonitoring() {
+        stopNetworkMonitoring()
+        pathMonitor = NWPathMonitor()
+        pathMonitor?.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if path.status == .satisfied {
+                    self.reconnectIfNeeded()
+                }
+            }
+        }
+        pathMonitor?.start(queue: DispatchQueue(label: "com.coupletracker.NetworkMonitor"))
+    }
+    
+    /// 停止監控網路狀態
+    private func stopNetworkMonitoring() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+    }
+    
+    /// 如果目前斷線且非主動斷開，嘗試重連
+    private func reconnectIfNeeded() {
+        guard !isManualDisconnect,
+              connectionState == .disconnected || connectionState == .reconnecting else {
+            return
+        }
+        // 重置重連計數，因為是網路恢復觸發的
+        reconnectAttempts = 0
+        establishConnection()
     }
     
     // MARK: - 螢幕監聽

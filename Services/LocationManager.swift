@@ -54,6 +54,9 @@ final class LocationManager: NSObject {
     /// 精度過濾閾值（公尺）— 超過此值的位置更新會被丟棄
     private let maxAcceptableAccuracy: CLLocationDistance = 100
     
+    /// iOS 17+ 背景活動 session，持有即可維持背景定位權限
+    private var backgroundSession: CLBackgroundActivitySession?
+    
     // MARK: - 初始化
     
     override init() {
@@ -87,6 +90,24 @@ final class LocationManager: NSObject {
     
     // MARK: - 位置更新
     
+    /// 開始追蹤（建立背景活動 session + 開始定位）
+    func startTracking() {
+        // iOS 17+: 建立背景活動 session，確保背景定位不被系統暫停
+        if #available(iOS 17.0, *) {
+            backgroundSession = CLBackgroundActivitySession()
+        }
+        startUpdatingLocation()
+    }
+    
+    /// 停止追蹤（釋放背景活動 session + 停止定位）
+    func stopTracking() {
+        if #available(iOS 17.0, *) {
+            backgroundSession?.invalidate()
+            backgroundSession = nil
+        }
+        stopUpdatingLocation()
+    }
+    
     /// 開始前景精確定位
     func startUpdatingLocation() {
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
@@ -108,9 +129,10 @@ final class LocationManager: NSObject {
     }
     
     /// 切換到背景省電模式（降低精度但保持更新）
+    /// distanceFilter = none 確保系統持續送出位置事件，維持背景保活
     func setBackgroundAccuracy() {
-        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-        locationManager.distanceFilter = 20
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        locationManager.distanceFilter = kCLDistanceFilterNone
     }
     
     /// 根據移動狀態智慧調整定位精度

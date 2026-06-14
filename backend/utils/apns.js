@@ -4,6 +4,7 @@
  */
 const apn = require('@parse/node-apn');
 const path = require('path');
+const db = require('../config/database');
 
 let apnProvider = null;
 
@@ -79,4 +80,35 @@ function shutdownAPNs() {
   }
 }
 
-module.exports = { initAPNs, sendPush, shutdownAPNs };
+/**
+ * 發送靜默推播（background push）
+ * 用於喚醒背景 App（例如 WebSocket 斷線後重連）
+ * @param {string} deviceToken - 裝置 Token
+ */
+async function sendSilentPush(deviceToken) {
+  if (!apnProvider || !deviceToken) return null;
+
+  const notification = new apn.Notification();
+  notification.contentAvailable = true;
+  notification.topic = process.env.APNS_BUNDLE_ID || 'com.coupletracker.app';
+  notification.priority = 5;
+  notification.pushType = 'background';
+  notification.payload = { type: 'wake_up', timestamp: Date.now() };
+
+  try {
+    const result = await apnProvider.send(notification, deviceToken);
+    // 清理無效 token
+    if (result.failed?.length > 0) {
+      const reason = result.failed[0].response?.reason;
+      if (reason === 'BadDeviceToken' || reason === 'Unregistered') {
+        await db.query('UPDATE users SET device_token = NULL WHERE device_token = ?', [deviceToken]);
+      }
+    }
+    return result;
+  } catch (err) {
+    console.error('[APNs] Silent push error:', err.message);
+    return null;
+  }
+}
+
+module.exports = { initAPNs, sendPush, sendSilentPush, shutdownAPNs };

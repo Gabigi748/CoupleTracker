@@ -5,7 +5,7 @@
 const { WebSocketServer } = require('ws');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
-const { sendPush } = require('../utils/apns');
+const { sendPush, sendSilentPush } = require('../utils/apns');
 
 // 儲存在線用戶的 WebSocket 連線 { userId: ws }
 const clients = new Map();
@@ -79,6 +79,22 @@ function initWebSocket(server) {
       lastSavedLocation.delete(userId);
       console.log(`[WS] 用戶 ${userId} 已斷線，在線人數: ${clients.size}`);
       notifyPartnerStatus(userId, false);
+
+      // 60 秒後如果還沒重連，發 silent push 喚醒 App
+      const disconnectedUserId = userId;
+      setTimeout(async () => {
+        if (!isUserOnline(disconnectedUserId)) {
+          try {
+            const [rows] = await db.query('SELECT device_token FROM users WHERE id = ?', [disconnectedUserId]);
+            if (rows[0]?.device_token) {
+              await sendSilentPush(rows[0].device_token);
+              console.log(`[WS] 已對用戶 ${disconnectedUserId} 發送 silent push 喚醒`);
+            }
+          } catch (err) {
+            console.error(`[WS] Silent push 錯誤 (用戶 ${disconnectedUserId}):`, err.message);
+          }
+        }
+      }, 60000);
     });
 
     // 處理錯誤
