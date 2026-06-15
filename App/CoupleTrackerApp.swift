@@ -149,15 +149,12 @@ struct CoupleTrackerApp: App {
                     await geofenceManager.loadZones()
                 }
                 
-                // 主動拉一次對方最新位置（避免 WebSocket 斷線期間沒有對方位置）
+                // 主動拉一次對方最新位置（WebSocket 斷線期間可能有更新）
                 Task {
                     if let result = try? await apiService.fetchPartnerLatestLocation() {
-                        // 只在 WebSocket 還沒收到對方位置時才用 API 的資料
-                        if webSocketManager.partnerLocation == nil {
-                            webSocketManager.partnerLocation = result.location
-                        }
-                        // 電量也更新（如果 WebSocket 還沒收到）
-                        if let battery = result.battery, battery >= 0, webSocketManager.partnerBattery == nil {
+                        // 回前台時一律用 API 最新資料更新（WebSocket 斷線期間舊值可能過時）
+                        webSocketManager.partnerLocation = result.location
+                        if let battery = result.battery, battery >= 0 {
                             webSocketManager.partnerBattery = battery
                         }
                     }
