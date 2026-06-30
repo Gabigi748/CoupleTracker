@@ -102,16 +102,13 @@ enum CoordinateConverter {
     // MARK: - 判斷設備是否在中國地區
     
     /// 判斷設備是否在中國地區
-    /// MapKit 在中國地區設備上使用高德地圖（GCJ-02 座標系）
-    /// 判斷依據：系統地區設定為 CN，或最後已知 GPS 座標在中國境內
+    /// MapKit 用哪套底圖（高德 GCJ-02 vs Apple Maps WGS-84）取決於設備的
+    /// App Store 地區設定，不是 GPS 物理位置。台灣機即使人在中國，MapKit
+    /// 底圖仍是 WGS-84，不需要做 GCJ-02 轉換。
     static var isDeviceInChina: Bool {
-        // 先看系統地區設定
+        // 只看系統地區設定（對應 App Store country/region）
         if let regionCode = Locale.current.region?.identifier, regionCode == "CN" {
             return true
-        }
-        // 再看最後已知的 GPS 座標
-        if let coord = lastKnownCoordinate {
-            return isInsideChina(lat: coord.lat, lng: coord.lng)
         }
         return false
     }
