@@ -54,9 +54,14 @@ struct MapView: View {
         locationManager.currentAccuracy ?? 0
     }
     
-    // 對方的位置座標
+    // 對方的位置座標（地圖顯示用，中國需 GCJ-02 轉換）
     private var partnerLocation: CLLocationCoordinate2D? {
-        webSocketManager.partnerLocation?.coordinate
+        guard let coord = webSocketManager.partnerLocation?.coordinate else { return nil }
+        if CoordinateConverter.isDeviceInChina {
+            let converted = CoordinateConverter.wgs84ToGcj02(lat: coord.latitude, lng: coord.longitude)
+            return CLLocationCoordinate2D(latitude: converted.lat, longitude: converted.lng)
+        }
+        return coord
     }
     
     // 對方名稱
@@ -77,12 +82,12 @@ struct MapView: View {
     // 計算距離（使用原始 WGS-84 座標，避免 GCJ-02 偏移造成誤差）
     private var distanceText: String {
         guard let myRawCoord = locationManager.currentLocation?.coordinate,
-              let partnerLoc = partnerLocation else {
+              let partnerRawCoord = webSocketManager.partnerLocation?.coordinate else {
             return "--"
         }
         // 兩邊都用 WGS-84 原始座標計算真實距離
         let my = CLLocation(latitude: myRawCoord.latitude, longitude: myRawCoord.longitude)
-        let partner = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
+        let partner = CLLocation(latitude: partnerRawCoord.latitude, longitude: partnerRawCoord.longitude)
         let distance = my.distance(from: partner)
         
         if distance < 1000 {
