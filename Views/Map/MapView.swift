@@ -74,12 +74,14 @@ struct MapView: View {
         webSocketManager.partnerLocation?.timestamp
     }
     
-    // 計算距離（公里）
+    // 計算距離（使用原始 WGS-84 座標，避免 GCJ-02 偏移造成誤差）
     private var distanceText: String {
-        guard let myLoc = myLocation, let partnerLoc = partnerLocation else {
+        guard let myRawCoord = locationManager.currentLocation?.coordinate,
+              let partnerLoc = partnerLocation else {
             return "--"
         }
-        let my = CLLocation(latitude: myLoc.latitude, longitude: myLoc.longitude)
+        // 兩邊都用 WGS-84 原始座標計算真實距離
+        let my = CLLocation(latitude: myRawCoord.latitude, longitude: myRawCoord.longitude)
         let partner = CLLocation(latitude: partnerLoc.latitude, longitude: partnerLoc.longitude)
         let distance = my.distance(from: partner)
         
