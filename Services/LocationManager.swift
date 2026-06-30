@@ -54,7 +54,10 @@ final class LocationManager: NSObject {
     /// 精度過濾閾值（公尺）— 超過此值的位置更新會被丟棄
     private let maxAcceptableAccuracy: CLLocationDistance = 100
     
-        // MARK: - 初始化
+    /// iOS 17+ 背景活動 session，持有即可維持背景定位權限
+    private var backgroundSession: CLBackgroundActivitySession?
+    
+    // MARK: - 初始化
     
     override init() {
         super.init()
@@ -87,13 +90,21 @@ final class LocationManager: NSObject {
     
     // MARK: - 位置更新
     
-    /// 開始追蹤（開始定位）
+    /// 開始追蹤（建立背景活動 session + 開始定位）
     func startTracking() {
+        // iOS 17+: 建立背景活動 session，確保背景定位不被系統暫停
+        if #available(iOS 17.0, *) {
+            backgroundSession = CLBackgroundActivitySession()
+        }
         startUpdatingLocation()
     }
     
-    /// 停止追蹤（停止定位）
+    /// 停止追蹤（釋放背景活動 session + 停止定位）
     func stopTracking() {
+        if #available(iOS 17.0, *) {
+            backgroundSession?.invalidate()
+            backgroundSession = nil
+        }
         stopUpdatingLocation()
     }
     
